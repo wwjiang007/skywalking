@@ -1,5 +1,5 @@
 ## 下载skywalking探针发布版本
-- 前向[发布页面](https://github.com/apache/incubator-skywalking/releases)
+- 前向[发布页面](http://skywalking.apache.org/downloads/)
 
 ## 部署探针
 1. 拷贝skywalking-agent目录到所需位置，探针包含整个目录，请不要改变目录结构
@@ -67,17 +67,23 @@ logging.level=DEBUG
 - 配置除了通过`/config/agent.config`文件外，可以通过环境变量和VM参数（-D）来进行设置
   - 参数的key = `skywalking.` + `agent.config`文件中的key
   - 优先级：系统环境变量 > VM参数（-D） > `/config/agent.config`中的配置
-- Log默认使用文件输出，输出到`/log`目录中
+- Log默认使用文件输出，输出到`/logs`目录中
 
 # Tomcat配置探针FAQ
-- Tomcat 7
+- Linux Tomcat 7, Tomcat 8  
 修改`tomcat/bin/catalina.sh`，在首行加入如下信息
 ```shell
 CATALINA_OPTS="$CATALINA_OPTS -javaagent:/path/to/skywalking-agent/skywalking-agent.jar"; export CATALINA_OPTS
 ```
 
-- Tomcat 8
-修改`tomcat/bin/catalina.sh`，在首行加入如下信息
+- Windows Tomcat 7, Tomcat 8  
+修改`tomcat/bin/catalina.bat`，在首行加入如下信息
 ```shell
-set "CATALINA_OPTS=... -javaagent:E:\apache-tomcat-8.5.20\skywalking-agent\skywalking-agent.jar"
+set "CATALINA_OPTS=-javaagent:/path/to/skywalking-agent/skywalking-agent.jar"
 ```
+- JAR 部署  
+修改启动命令添加启动参数`-javaagent`
+ ```shell
+ java -javaagent:/path/to/skywalking-agent/skywalking-agent.jar -jar yourApp.jar
+ ```
+
