@@ -16,18 +16,19 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.boot;
-
-import org.apache.skywalking.apm.agent.core.logging.api.ILog;
-import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
 
 import java.io.File;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
+import org.apache.skywalking.apm.agent.core.logging.api.ILog;
+import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
 
 /**
- * @author wusheng
+ * AgentPackagePath is a flag and finder to locate the SkyWalking agent.jar. It gets the absolute path of the agent jar.
+ * The path is the required metadata for agent core looking up the plugins and toolkit activations. If the lookup
+ * mechanism fails, the agent will exit directly.
  */
 public class AgentPackagePath {
     private static final ILog logger = LogManager.getLogger(AgentPackagePath.class);
@@ -48,7 +49,7 @@ public class AgentPackagePath {
     private static File findPath() throws AgentPackageNotFoundException {
         String classResourcePath = AgentPackagePath.class.getName().replaceAll("\\.", "/") + ".class";
 
-        URL resource = AgentPackagePath.class.getClassLoader().getSystemClassLoader().getResource(classResourcePath);
+        URL resource = ClassLoader.getSystemClassLoader().getResource(classResourcePath);
         if (resource != null) {
             String urlString = resource.toString();
 
@@ -61,15 +62,17 @@ public class AgentPackagePath {
                 urlString = urlString.substring(urlString.indexOf("file:"), insidePathIndex);
                 File agentJarFile = null;
                 try {
-                    agentJarFile = new File(new URL(urlString).getFile());
-                } catch (MalformedURLException e) {
+                    agentJarFile = new File(new URL(urlString).toURI());
+                } catch (MalformedURLException | URISyntaxException e) {
                     logger.error(e, "Can not locate agent jar file by url:" + urlString);
                 }
                 if (agentJarFile.exists()) {
                     return agentJarFile.getParentFile();
                 }
             } else {
-                String classLocation = urlString.substring(urlString.indexOf("file:"), urlString.length() - classResourcePath.length());
+                int prefixLength = "file:".length();
+                String classLocation = urlString.substring(
+                    prefixLength, urlString.length() - classResourcePath.length());
                 return new File(classLocation);
             }
         }

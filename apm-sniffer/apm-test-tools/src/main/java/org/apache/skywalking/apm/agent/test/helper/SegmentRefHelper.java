@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.test.helper;
 
 import org.apache.skywalking.apm.agent.core.context.ids.ID;
@@ -50,9 +49,9 @@ public class SegmentRefHelper {
         return -1;
     }
 
-    public static int getEntryApplicationInstanceId(TraceSegmentRef ref) {
+    public static int getEntryServiceInstanceId(TraceSegmentRef ref) {
         try {
-            return FieldGetter.getValue(ref, "entryApplicationInstanceId");
+            return FieldGetter.getValue(ref, "entryServiceInstanceId");
         } catch (Exception e) {
         }
 

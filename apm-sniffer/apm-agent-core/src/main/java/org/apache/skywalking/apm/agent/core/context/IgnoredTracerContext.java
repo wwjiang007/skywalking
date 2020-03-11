@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.context;
 
 import java.util.LinkedList;
@@ -25,24 +24,15 @@ import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.NoopSpan;
 
 /**
- * The <code>IgnoredTracerContext</code> represent a context should be ignored.
- * So it just maintains the stack with an integer depth field.
- *
+ * The <code>IgnoredTracerContext</code> represent a context should be ignored. So it just maintains the stack with an
+ * integer depth field.
+ * <p>
  * All operations through this will be ignored, and keep the memory and gc cost as low as possible.
- *
- * @author wusheng
  */
 public class IgnoredTracerContext implements AbstractTracerContext {
     private static final NoopSpan NOOP_SPAN = new NoopSpan();
 
     private int stackDepth;
-
-    /**
-     * Runtime context of the ignored context
-     *
-     * The context should work even no trace, in order to avoid the unexpected status.
-     */
-    private RuntimeContext runtimeContext;
 
     public IgnoredTracerContext() {
         this.stackDepth = 0;
@@ -58,11 +48,13 @@ public class IgnoredTracerContext implements AbstractTracerContext {
 
     }
 
-    @Override public ContextSnapshot capture() {
+    @Override
+    public ContextSnapshot capture() {
         return new ContextSnapshot(null, -1, null);
     }
 
-    @Override public void continued(ContextSnapshot snapshot) {
+    @Override
+    public void continued(ContextSnapshot snapshot) {
 
     }
 
@@ -95,22 +87,26 @@ public class IgnoredTracerContext implements AbstractTracerContext {
     }
 
     @Override
-    public void stopSpan(AbstractSpan span) {
+    public boolean stopSpan(AbstractSpan span) {
         stackDepth--;
         if (stackDepth == 0) {
             ListenerManager.notifyFinish(this);
         }
+        return stackDepth == 0;
     }
 
-    @Override public RuntimeContext getRuntimeContext() {
-        if (runtimeContext == null) {
-            runtimeContext = new RuntimeContext();
-        }
-        return runtimeContext;
+    @Override
+    public AbstractTracerContext awaitFinishAsync() {
+        return this;
+    }
+
+    @Override
+    public void asyncStop(AsyncSpan span) {
+
     }
 
     public static class ListenerManager {
-        private static List<IgnoreTracerContextListener> LISTENERS = new LinkedList<IgnoreTracerContextListener>();
+        private static List<IgnoreTracerContextListener> LISTENERS = new LinkedList<>();
 
         /**
          * Add the given {@link IgnoreTracerContextListener} to {@link #LISTENERS} list.
@@ -125,8 +121,6 @@ public class IgnoredTracerContext implements AbstractTracerContext {
          * Notify the {@link IgnoredTracerContext.ListenerManager} about the given {@link IgnoredTracerContext} have
          * finished. And trigger {@link IgnoredTracerContext.ListenerManager} to notify all {@link #LISTENERS} 's {@link
          * IgnoreTracerContextListener#afterFinished(IgnoredTracerContext)}
-         *
-         * @param ignoredTracerContext
          */
         static void notifyFinish(IgnoredTracerContext ignoredTracerContext) {
             for (IgnoreTracerContextListener listener : LISTENERS) {

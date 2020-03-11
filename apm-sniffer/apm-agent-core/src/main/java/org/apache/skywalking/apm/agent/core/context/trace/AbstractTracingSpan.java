@@ -18,29 +18,47 @@
 
 package org.apache.skywalking.apm.agent.core.context.trace;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import org.apache.skywalking.apm.agent.core.context.ContextManager;
+import org.apache.skywalking.apm.agent.core.context.TracingContext;
+import org.apache.skywalking.apm.agent.core.context.tag.AbstractTag;
+import org.apache.skywalking.apm.agent.core.context.tag.Tags;
 import org.apache.skywalking.apm.agent.core.context.util.KeyValuePair;
+import org.apache.skywalking.apm.agent.core.context.util.TagValuePair;
 import org.apache.skywalking.apm.agent.core.context.util.ThrowableTransformer;
 import org.apache.skywalking.apm.agent.core.dictionary.DictionaryUtil;
-import org.apache.skywalking.apm.network.proto.SpanObject;
-import org.apache.skywalking.apm.network.proto.SpanType;
+import org.apache.skywalking.apm.network.language.agent.SpanType;
+import org.apache.skywalking.apm.network.language.agent.v2.SpanObjectV2;
 import org.apache.skywalking.apm.network.trace.component.Component;
 
 /**
  * The <code>AbstractTracingSpan</code> represents a group of {@link AbstractSpan} implementations, which belongs a real
  * distributed trace.
- *
- * @author wusheng
  */
 public abstract class AbstractTracingSpan implements AbstractSpan {
     protected int spanId;
     protected int parentSpanId;
-    protected List<KeyValuePair> tags;
+    protected List<TagValuePair> tags;
     protected String operationName;
     protected int operationId;
     protected SpanLayer layer;
+    /**
+     * The span has been tagged in async mode, required async stop to finish.
+     */
+    protected volatile boolean isInAsyncMode = false;
+    /**
+     * The flag represents whether the span has been async stopped
+     */
+    private volatile boolean isAsyncStopped = false;
+
+    /**
+     * The context to which the span belongs
+     */
+    protected final TracingContext owner;
+
     /**
      * The start time of this Span.
      */
@@ -70,31 +88,50 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
      */
     protected List<TraceSegmentRef> refs;
 
-    protected AbstractTracingSpan(int spanId, int parentSpanId, String operationName) {
+    protected AbstractTracingSpan(int spanId, int parentSpanId, String operationName, TracingContext owner) {
         this.operationName = operationName;
         this.operationId = DictionaryUtil.nullValue();
         this.spanId = spanId;
         this.parentSpanId = parentSpanId;
+        this.owner = owner;
     }
 
-    protected AbstractTracingSpan(int spanId, int parentSpanId, int operationId) {
+    protected AbstractTracingSpan(int spanId, int parentSpanId, int operationId, TracingContext owner) {
         this.operationName = null;
         this.operationId = operationId;
         this.spanId = spanId;
         this.parentSpanId = parentSpanId;
+        this.owner = owner;
     }
 
     /**
      * Set a key:value tag on the Span.
+     * <p>
+     * {@inheritDoc}
      *
      * @return this Span instance, for chaining
      */
     @Override
     public AbstractTracingSpan tag(String key, String value) {
+        return tag(Tags.ofKey(key), value);
+    }
+
+    @Override
+    public AbstractTracingSpan tag(AbstractTag<?> tag, String value) {
         if (tags == null) {
-            tags = new LinkedList<KeyValuePair>();
+            tags = new ArrayList<>(8);
         }
-        tags.add(new KeyValuePair(key, value));
+
+        if (tag.isCanOverwrite()) {
+            for (TagValuePair pair : tags) {
+                if (pair.sameWith(tag)) {
+                    pair.setValue(value);
+                    return this;
+                }
+            }
+        }
+
+        tags.add(new TagValuePair(tag, value));
         return this;
     }
 
@@ -125,27 +162,25 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
     @Override
     public AbstractTracingSpan log(Throwable t) {
         if (logs == null) {
-            logs = new LinkedList<LogDataEntity>();
+            logs = new LinkedList<>();
         }
-        logs.add(new LogDataEntity.Builder()
-            .add(new KeyValuePair("event", "error"))
-            .add(new KeyValuePair("error.kind", t.getClass().getName()))
-            .add(new KeyValuePair("message", t.getMessage()))
-            .add(new KeyValuePair("stack", ThrowableTransformer.INSTANCE.convert2String(t, 4000)))
-            .build(System.currentTimeMillis()));
+        logs.add(new LogDataEntity.Builder().add(new KeyValuePair("event", "error"))
+                                            .add(new KeyValuePair("error.kind", t.getClass().getName()))
+                                            .add(new KeyValuePair("message", t.getMessage()))
+                                            .add(new KeyValuePair("stack", ThrowableTransformer.INSTANCE.convert2String(t, 4000)))
+                                            .build(System.currentTimeMillis()));
         return this;
     }
 
     /**
      * Record a common log with multi fields, for supporting opentracing-java
      *
-     * @param fields
      * @return the Span, for chaining
      */
     @Override
     public AbstractTracingSpan log(long timestampMicroseconds, Map<String, ?> fields) {
         if (logs == null) {
-            logs = new LinkedList<LogDataEntity>();
+            logs = new LinkedList<>();
         }
         LogDataEntity.Builder builder = new LogDataEntity.Builder();
         for (Map.Entry<String, ?> entry : fields.entrySet()) {
@@ -171,20 +206,21 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
      * Set the operation name, just because these is not compress dictionary value for this name. Use the entire string
      * temporarily, the agent will compress this name in async mode.
      *
-     * @param operationName
      * @return span instance, for chaining.
      */
     @Override
     public AbstractTracingSpan setOperationName(String operationName) {
         this.operationName = operationName;
         this.operationId = DictionaryUtil.nullValue();
+
+        // recheck profiling status
+        owner.profilingRecheck(this, operationName);
         return this;
     }
 
     /**
      * Set the operation id, which compress by the name.
      *
-     * @param operationId
      * @return span instance, for chaining.
      */
     @Override
@@ -218,7 +254,6 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
     /**
      * Set the component of this span, with internal supported. Highly recommend to use this way.
      *
-     * @param component
      * @return span instance, for chaining.
      */
     @Override
@@ -230,7 +265,6 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
     /**
      * Set the component name. By using this, cost more memory and network.
      *
-     * @param componentName
      * @return span instance, for chaining.
      */
     @Override
@@ -245,8 +279,8 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
         return this;
     }
 
-    public SpanObject.Builder transform() {
-        SpanObject.Builder spanBuilder = SpanObject.newBuilder();
+    public SpanObjectV2.Builder transform() {
+        SpanObjectV2.Builder spanBuilder = SpanObjectV2.newBuilder();
 
         spanBuilder.setSpanId(this.spanId);
         spanBuilder.setParentSpanId(parentSpanId);
@@ -276,7 +310,7 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
         }
         spanBuilder.setIsError(errorOccurred);
         if (this.tags != null) {
-            for (KeyValuePair tag : this.tags) {
+            for (TagValuePair tag : this.tags) {
                 spanBuilder.addTags(tag.transform());
             }
         }
@@ -294,12 +328,37 @@ public abstract class AbstractTracingSpan implements AbstractSpan {
         return spanBuilder;
     }
 
-    @Override public void ref(TraceSegmentRef ref) {
+    @Override
+    public void ref(TraceSegmentRef ref) {
         if (refs == null) {
-            refs = new LinkedList<TraceSegmentRef>();
+            refs = new LinkedList<>();
         }
         if (!refs.contains(ref)) {
             refs.add(ref);
         }
+    }
+
+    @Override
+    public AbstractSpan prepareForAsync() {
+        if (isInAsyncMode) {
+            throw new RuntimeException("Prepare for async repeatedly. Span is already in async mode.");
+        }
+        ContextManager.awaitFinishAsync(this);
+        isInAsyncMode = true;
+        return this;
+    }
+
+    @Override
+    public AbstractSpan asyncFinish() {
+        if (!isInAsyncMode) {
+            throw new RuntimeException("Span is not in async mode, please use '#prepareForAsync' to active.");
+        }
+        if (isAsyncStopped) {
+            throw new RuntimeException("Can not do async finish for the span repeately.");
+        }
+        this.endTime = System.currentTimeMillis();
+        owner.asyncStop(this);
+        isAsyncStopped = true;
+        return this;
     }
 }

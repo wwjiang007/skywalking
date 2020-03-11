@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.test.tools;
 
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegmentRef;
@@ -39,7 +38,7 @@ public class SegmentRefAssert {
     }
 
     public static void assertEntryApplicationInstanceId(TraceSegmentRef ref, int entryApplicationInstanceID) {
-        assertThat(SegmentRefHelper.getEntryApplicationInstanceId(ref), is(entryApplicationInstanceID));
+        assertThat(SegmentRefHelper.getEntryServiceInstanceId(ref), is(entryApplicationInstanceID));
     }
 
 }

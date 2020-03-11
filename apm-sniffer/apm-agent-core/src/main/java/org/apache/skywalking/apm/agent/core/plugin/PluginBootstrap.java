@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.plugin;
 
 import java.net.URL;
@@ -28,11 +27,8 @@ import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
 
 /**
- * Plugins finder.
- * Use {@link PluginResourcesResolver} to find all plugins,
- * and ask {@link PluginCfg} to load all plugin definitions.
- *
- * @author wusheng
+ * Plugins finder. Use {@link PluginResourcesResolver} to find all plugins, and ask {@link PluginCfg} to load all plugin
+ * definitions.
  */
 public class PluginBootstrap {
     private static final ILog logger = LogManager.getLogger(PluginBootstrap.class);
@@ -67,16 +63,15 @@ public class PluginBootstrap {
         for (PluginDefine pluginDefine : pluginClassList) {
             try {
                 logger.debug("loading plugin class {}.", pluginDefine.getDefineClass());
-                AbstractClassEnhancePluginDefine plugin =
-                    (AbstractClassEnhancePluginDefine)Class.forName(pluginDefine.getDefineClass(),
-                        true,
-                        AgentClassLoader.getDefault())
-                        .newInstance();
+                AbstractClassEnhancePluginDefine plugin = (AbstractClassEnhancePluginDefine) Class.forName(pluginDefine.getDefineClass(), true, AgentClassLoader
+                    .getDefault()).newInstance();
                 plugins.add(plugin);
             } catch (Throwable t) {
                 logger.error(t, "load plugin [{}] failure.", pluginDefine.getDefineClass());
             }
         }
+
+        plugins.addAll(DynamicPluginLoader.INSTANCE.load(AgentClassLoader.getDefault()));
 
         return plugins;
 

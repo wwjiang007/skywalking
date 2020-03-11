@@ -27,13 +27,13 @@ import java.util.List;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.context.ContextManagerExtendService;
-import org.apache.skywalking.apm.agent.core.context.SW3CarrierItem;
+import org.apache.skywalking.apm.agent.core.context.SW6CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.LogDataEntity;
 import org.apache.skywalking.apm.agent.core.context.trace.SpanLayer;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegmentRef;
-import org.apache.skywalking.apm.agent.core.context.util.KeyValuePair;
+import org.apache.skywalking.apm.agent.core.context.util.TagValuePair;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.EnhancedInstance;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.MethodInterceptResult;
 import org.apache.skywalking.apm.agent.test.helper.SegmentHelper;
@@ -103,9 +103,15 @@ public class DubboInterceptorTest {
         when(invocation.getArguments()).thenReturn(new Object[] {"abc"});
         PowerMockito.when(RpcContext.getContext()).thenReturn(rpcContext);
         when(rpcContext.isConsumerSide()).thenReturn(true);
-        allArguments = new Object[] {invoker, invocation};
-        argumentTypes = new Class[] {invoker.getClass(), invocation.getClass()};
-        Config.Agent.APPLICATION_CODE = "DubboTestCases-APP";
+        allArguments = new Object[] {
+            invoker,
+            invocation
+        };
+        argumentTypes = new Class[] {
+            invoker.getClass(),
+            invocation.getClass()
+        };
+        Config.Agent.SERVICE_NAME = "DubboTestCases-APP";
     }
 
     @Test
@@ -159,15 +165,14 @@ public class DubboInterceptorTest {
     @Test
     public void testProviderWithAttachment() throws Throwable {
         when(rpcContext.isConsumerSide()).thenReturn(false);
-        when(rpcContext.getAttachment(SW3CarrierItem.HEADER_NAME)).thenReturn("1.323.4433|3|1|1|#192.168.1.8 :18002|#/portal/|#/testEntrySpan|#AQA*#AQA*Et0We0tQNQA*");
+        when(rpcContext.getAttachment(SW6CarrierItem.HEADER_NAME)).thenReturn("1-MC4wLjA=-MS4zMjMuNDQzMw==-3-1-1-IzE5Mi4xNjguMS44IDoxODAwMg==-Iy9wb3J0YWwv-Iy90ZXN0RW50cnlTcGFu");
 
         dubboInterceptor.beforeMethod(enhancedInstance, null, allArguments, argumentTypes, methodInterceptResult);
         dubboInterceptor.afterMethod(enhancedInstance, null, allArguments, argumentTypes, result);
         assertProvider();
     }
 
-    private void assertConsumerTraceSegmentInErrorCase(
-        TraceSegment traceSegment) {
+    private void assertConsumerTraceSegmentInErrorCase(TraceSegment traceSegment) {
         List<AbstractTracingSpan> spans = SegmentHelper.getSpans(traceSegment);
         assertThat(spans.size(), is(1));
         assertConsumerSpan(spans.get(0));
@@ -192,7 +197,7 @@ public class DubboInterceptorTest {
 
     private void assertTraceSegmentRef(TraceSegmentRef actual) {
         assertThat(SegmentRefHelper.getSpanId(actual), is(3));
-        assertThat(SegmentRefHelper.getEntryApplicationInstanceId(actual), is(1));
+        assertThat(SegmentRefHelper.getEntryServiceInstanceId(actual), is(1));
         assertThat(SegmentRefHelper.getTraceSegmentId(actual).toString(), is("1.323.4433"));
     }
 
@@ -207,11 +212,12 @@ public class DubboInterceptorTest {
     }
 
     private void assertCommonsAttribute(AbstractTracingSpan span) {
-        List<KeyValuePair> tags = SpanHelper.getTags(span);
+        List<TagValuePair> tags = SpanHelper.getTags(span);
         assertThat(tags.size(), is(1));
         assertThat(SpanHelper.getLayer(span), CoreMatchers.is(SpanLayer.RPC_FRAMEWORK));
         assertThat(SpanHelper.getComponentId(span), is(3));
-        assertThat(tags.get(0).getValue(), is("dubbo://127.0.0.1:20880/org.apache.skywalking.apm.test.TestDubboService.test(String)"));
+        assertThat(tags.get(0)
+                       .getValue(), is("dubbo://127.0.0.1:20880/org.apache.skywalking.apm.test.TestDubboService.test(String)"));
         assertThat(span.getOperationName(), is("org.apache.skywalking.apm.test.TestDubboService.test(String)"));
     }
 }

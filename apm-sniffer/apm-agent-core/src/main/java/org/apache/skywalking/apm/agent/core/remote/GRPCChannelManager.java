@@ -21,6 +21,7 @@ package org.apache.skywalking.apm.agent.core.remote;
 import io.grpc.Channel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -32,14 +33,10 @@ import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
 import org.apache.skywalking.apm.agent.core.boot.DefaultNamedThreadFactory;
 import org.apache.skywalking.apm.agent.core.conf.Config;
-import org.apache.skywalking.apm.agent.core.conf.RemoteDownstreamConfig;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
 import org.apache.skywalking.apm.agent.core.logging.api.LogManager;
 import org.apache.skywalking.apm.util.RunnableWithExceptionProtection;
 
-/**
- * @author wusheng, zhang xin
- */
 @DefaultImplementor
 public class GRPCChannelManager implements BootService, Runnable {
     private static final ILog logger = LogManager.getLogger(GRPCChannelManager.class);
@@ -47,34 +44,45 @@ public class GRPCChannelManager implements BootService, Runnable {
     private volatile GRPCChannel managedChannel = null;
     private volatile ScheduledFuture<?> connectCheckFuture;
     private volatile boolean reconnect = true;
-    private Random random = new Random();
-    private List<GRPCChannelListener> listeners = Collections.synchronizedList(new LinkedList<GRPCChannelListener>());
+    private final Random random = new Random();
+    private final List<GRPCChannelListener> listeners = Collections.synchronizedList(new LinkedList<>());
+    private volatile List<String> grpcServers;
+    private volatile int selectedIdx = -1;
+    private volatile int reconnectCount = 0;
 
     @Override
-    public void prepare() throws Throwable {
+    public void prepare() {
 
     }
 
     @Override
-    public void boot() throws Throwable {
-        connectCheckFuture = Executors
-            .newSingleThreadScheduledExecutor(new DefaultNamedThreadFactory("GRPCChannelManager"))
-            .scheduleAtFixedRate(new RunnableWithExceptionProtection(this, new RunnableWithExceptionProtection.CallbackWhenException() {
-                @Override
-                public void handle(Throwable t) {
-                    logger.error("unexpected exception.", t);
-                }
-            }), 0, Config.Collector.GRPC_CHANNEL_CHECK_INTERVAL, TimeUnit.SECONDS);
+    public void boot() {
+        if (Config.Collector.BACKEND_SERVICE.trim().length() == 0) {
+            logger.error("Collector server addresses are not set.");
+            logger.error("Agent will not uplink any data.");
+            return;
+        }
+        grpcServers = Arrays.asList(Config.Collector.BACKEND_SERVICE.split(","));
+        connectCheckFuture = Executors.newSingleThreadScheduledExecutor(
+            new DefaultNamedThreadFactory("GRPCChannelManager")
+        ).scheduleAtFixedRate(
+            new RunnableWithExceptionProtection(
+                this,
+                t -> logger.error("unexpected exception.", t)
+            ), 0, Config.Collector.GRPC_CHANNEL_CHECK_INTERVAL, TimeUnit.SECONDS
+        );
     }
 
     @Override
-    public void onComplete() throws Throwable {
+    public void onComplete() {
 
     }
 
     @Override
-    public void shutdown() throws Throwable {
-        connectCheckFuture.cancel(true);
+    public void shutdown() {
+        if (connectCheckFuture != null) {
+            connectCheckFuture.cancel(true);
+        }
         if (managedChannel != null) {
             managedChannel.shutdownNow();
         }
@@ -85,33 +93,48 @@ public class GRPCChannelManager implements BootService, Runnable {
     public void run() {
         logger.debug("Selected collector grpc service running, reconnect:{}.", reconnect);
         if (reconnect) {
-            if (RemoteDownstreamConfig.Collector.GRPC_SERVERS.size() > 0) {
+            if (grpcServers.size() > 0) {
                 String server = "";
                 try {
-                    int index = Math.abs(random.nextInt()) % RemoteDownstreamConfig.Collector.GRPC_SERVERS.size();
-                    server = RemoteDownstreamConfig.Collector.GRPC_SERVERS.get(index);
-                    String[] ipAndPort = server.split(":");
+                    int index = Math.abs(random.nextInt()) % grpcServers.size();
+                    if (index != selectedIdx) {
+                        selectedIdx = index;
 
-                    managedChannel = GRPCChannel.newBuilder(ipAndPort[0], Integer.parseInt(ipAndPort[1]))
-                        .addManagedChannelBuilder(new StandardChannelBuilder())
-                        .addManagedChannelBuilder(new TLSChannelBuilder())
-                        .addChannelDecorator(new AuthenticationDecorator())
-                        .build();
+                        server = grpcServers.get(index);
+                        String[] ipAndPort = server.split(":");
 
-                    if (!managedChannel.isShutdown() && !managedChannel.isTerminated()) {
-                        reconnect = false;
+                        if (managedChannel != null) {
+                            managedChannel.shutdownNow();
+                        }
+
+                        managedChannel = GRPCChannel.newBuilder(ipAndPort[0], Integer.parseInt(ipAndPort[1]))
+                                                    .addManagedChannelBuilder(new StandardChannelBuilder())
+                                                    .addManagedChannelBuilder(new TLSChannelBuilder())
+                                                    .addChannelDecorator(new AgentIDDecorator())
+                                                    .addChannelDecorator(new AuthenticationDecorator())
+                                                    .build();
                         notify(GRPCChannelStatus.CONNECTED);
-                    } else {
-                        notify(GRPCChannelStatus.DISCONNECT);
+                        reconnectCount = 0;
+                        reconnect = false;
+                    } else if (managedChannel.isConnected(++reconnectCount > Config.Agent.FORCE_RECONNECTION_PERIOD)) {
+                        // Reconnect to the same server is automatically done by GRPC,
+                        // therefore we are responsible to check the connectivity and
+                        // set the state and notify listeners
+                        reconnectCount = 0;
+                        notify(GRPCChannelStatus.CONNECTED);
+                        reconnect = false;
                     }
+
                     return;
                 } catch (Throwable t) {
                     logger.error(t, "Create channel to {} fail.", server);
-                    notify(GRPCChannelStatus.DISCONNECT);
                 }
             }
 
-            logger.debug("Selected collector grpc service is not available. Wait {} seconds to retry", Config.Collector.GRPC_CHANNEL_CHECK_INTERVAL);
+            logger.debug(
+                "Selected collector grpc service is not available. Wait {} seconds to retry",
+                Config.Collector.GRPC_CHANNEL_CHECK_INTERVAL
+            );
         }
     }
 
@@ -125,12 +148,11 @@ public class GRPCChannelManager implements BootService, Runnable {
 
     /**
      * If the given expcetion is triggered by network problem, connect in background.
-     *
-     * @param throwable
      */
     public void reportError(Throwable throwable) {
         if (isNetworkError(throwable)) {
             reconnect = true;
+            notify(GRPCChannelStatus.DISCONNECT);
         }
     }
 
@@ -146,13 +168,10 @@ public class GRPCChannelManager implements BootService, Runnable {
 
     private boolean isNetworkError(Throwable throwable) {
         if (throwable instanceof StatusRuntimeException) {
-            StatusRuntimeException statusRuntimeException = (StatusRuntimeException)throwable;
-            return statusEquals(statusRuntimeException.getStatus(),
-                Status.UNAVAILABLE,
-                Status.PERMISSION_DENIED,
-                Status.UNAUTHENTICATED,
-                Status.RESOURCE_EXHAUSTED,
-                Status.UNKNOWN
+            StatusRuntimeException statusRuntimeException = (StatusRuntimeException) throwable;
+            return statusEquals(
+                statusRuntimeException.getStatus(), Status.UNAVAILABLE, Status.PERMISSION_DENIED,
+                Status.UNAUTHENTICATED, Status.RESOURCE_EXHAUSTED, Status.UNKNOWN
             );
         }
         return false;

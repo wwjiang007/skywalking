@@ -16,12 +16,15 @@
  *
  */
 
-
 package org.apache.skywalking.apm.util;
 
 public final class StringUtil {
     public static boolean isEmpty(String str) {
         return str == null || str.length() == 0;
+    }
+
+    public static boolean isNotEmpty(String str) {
+        return !isEmpty(str);
     }
 
     public static String join(final char delimiter, final String... strings) {
@@ -50,5 +53,24 @@ public final class StringUtil {
             }
         }
         return sb.toString();
+    }
+
+    public static boolean substringMatch(CharSequence str, int index, CharSequence substring) {
+        if (index + substring.length() > str.length()) {
+            return false;
+        }
+        for (int i = 0; i < substring.length(); i++) {
+            if (str.charAt(index + i) != substring.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static String cut(String str, int threshold) {
+        if (isEmpty(str) || str.length() <= threshold) {
+            return str;
+        }
+        return str.substring(0, threshold);
     }
 }

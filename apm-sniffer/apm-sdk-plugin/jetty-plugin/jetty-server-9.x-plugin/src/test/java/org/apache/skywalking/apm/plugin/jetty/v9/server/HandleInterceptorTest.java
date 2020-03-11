@@ -19,7 +19,7 @@
 package org.apache.skywalking.apm.plugin.jetty.v9.server;
 
 import java.util.List;
-import org.apache.skywalking.apm.agent.core.context.SW3CarrierItem;
+import org.apache.skywalking.apm.agent.core.context.SW6CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.LogDataEntity;
 import org.apache.skywalking.apm.agent.core.context.trace.SpanLayer;
@@ -108,7 +108,7 @@ public class HandleInterceptorTest {
 
     @Test
     public void testWithSerializedContextData() throws Throwable {
-        when(request.getHeader(SW3CarrierItem.HEADER_NAME)).thenReturn("1.234.111|3|1|1|#192.168.1.8:18002|#/portal/|#/testEntrySpan|#AQA*#AQA*Et0We0tQNQA*");
+        when(request.getHeader(SW6CarrierItem.HEADER_NAME)).thenReturn("1-MC4wLjA=-MS4yMzQuMTEx-3-1-1-IzE5Mi4xNjguMS44OjE4MDAy-Iy9wb3J0YWwv-Iy90ZXN0RW50cnlTcGFu");
 
         jettyInvokeInterceptor.beforeMethod(service, null, arguments, argumentType, methodInterceptResult);
         jettyInvokeInterceptor.afterMethod(service, null, arguments, argumentType, null);
@@ -138,7 +138,7 @@ public class HandleInterceptorTest {
     }
 
     private void assertTraceSegmentRef(TraceSegmentRef ref) {
-        assertThat(SegmentRefHelper.getEntryApplicationInstanceId(ref), is(1));
+        assertThat(SegmentRefHelper.getEntryServiceInstanceId(ref), is(1));
         assertThat(SegmentRefHelper.getSpanId(ref), is(3));
         assertThat(SegmentRefHelper.getTraceSegmentId(ref).toString(), is("1.234.111"));
     }
@@ -153,17 +153,18 @@ public class HandleInterceptorTest {
 
     public static class MockService extends HttpChannel implements EnhancedInstance {
 
-        public MockService(Connector connector,
-            HttpConfiguration configuration, EndPoint endPoint,
+        public MockService(Connector connector, HttpConfiguration configuration, EndPoint endPoint,
             HttpTransport transport, HttpInput input) {
             super(connector, configuration, endPoint, transport, input);
         }
 
-        @Override public Object getSkyWalkingDynamicField() {
+        @Override
+        public Object getSkyWalkingDynamicField() {
             return null;
         }
 
-        @Override public void setSkyWalkingDynamicField(Object value) {
+        @Override
+        public void setSkyWalkingDynamicField(Object value) {
 
         }
     }

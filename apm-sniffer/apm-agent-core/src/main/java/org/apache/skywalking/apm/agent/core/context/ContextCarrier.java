@@ -16,62 +16,54 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.context;
 
 import java.io.Serializable;
 import java.util.List;
+import org.apache.skywalking.apm.agent.core.base64.Base64;
 import org.apache.skywalking.apm.agent.core.context.ids.DistributedTraceId;
 import org.apache.skywalking.apm.agent.core.context.ids.ID;
 import org.apache.skywalking.apm.agent.core.context.ids.PropagatedTraceId;
-import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
 import org.apache.skywalking.apm.agent.core.dictionary.DictionaryUtil;
 import org.apache.skywalking.apm.util.StringUtil;
 
 /**
- * {@link ContextCarrier} is a data carrier of {@link TracingContext}.
- * It holds the snapshot (current state) of {@link TracingContext}.
+ * {@link ContextCarrier} is a data carrier of {@link TracingContext}. It holds the snapshot (current state) of {@link
+ * TracingContext}.
  * <p>
- * Created by wusheng on 2017/2/17.
  */
 public class ContextCarrier implements Serializable {
-    /**
-     * {@link TraceSegment#traceSegmentId}
-     */
     private ID traceSegmentId;
 
     /**
-     * id of parent span.
-     * It is unique in parent trace segment.
+     * id of parent span. It is unique in parent trace segment.
      */
     private int spanId = -1;
 
     /**
      * id of parent application instance, it's the id assigned by collector.
      */
-    private int parentApplicationInstanceId = DictionaryUtil.nullValue();
+    private int parentServiceInstanceId = DictionaryUtil.nullValue();
 
     /**
      * id of first application instance in this distributed trace, it's the id assigned by collector.
      */
-    private int entryApplicationInstanceId = DictionaryUtil.nullValue();
+    private int entryServiceInstanceId = DictionaryUtil.nullValue();
 
     /**
-     * peer(ipv4/ipv6/hostname + port) of the server, from client side.
+     * peer(ipv4s/ipv6/hostname + port) of the server, from client side.
      */
     private String peerHost;
 
     /**
-     * Operation/Service name of the first one in this distributed trace.
-     * This name may be compressed to an integer.
+     * Operation/Service name of the first one in this distributed trace. This name may be compressed to an integer.
      */
-    private String entryOperationName;
+    private String entryEndpointName;
 
     /**
-     * Operation/Service name of the parent one in this distributed trace.
-     * This name may be compressed to an integer.
+     * Operation/Service name of the parent one in this distributed trace. This name may be compressed to an integer.
      */
-    private String parentOperationName;
+    private String parentEndpointName;
 
     /**
      * {@link DistributedTraceId}, also known as TraceId
@@ -79,31 +71,31 @@ public class ContextCarrier implements Serializable {
     private DistributedTraceId primaryDistributedTraceId;
 
     public CarrierItem items() {
-        SW3CarrierItem carrierItem = new SW3CarrierItem(this, null);
-        CarrierItemHead head = new CarrierItemHead(carrierItem);
-        return head;
+        SW6CarrierItem sw6CarrierItem = new SW6CarrierItem(this, null);
+        return new CarrierItemHead(sw6CarrierItem);
     }
 
     /**
-     * Serialize this {@link ContextCarrier} to a {@link String},
-     * with '|' split.
+     * Serialize this {@link ContextCarrier} to a {@link String}, with '|' split.
      *
      * @return the serialization string.
      */
-    String serialize() {
-        if (this.isValid()) {
-            return StringUtil.join('|',
-                this.getTraceSegmentId().encode(),
+    String serialize(HeaderVersion version) {
+        if (this.isValid(version)) {
+            return StringUtil.join(
+                '-',
+                "1",
+                Base64.encode(this.getPrimaryDistributedTraceId().encode()),
+                Base64.encode(this.getTraceSegmentId().encode()),
                 this.getSpanId() + "",
-                this.getParentApplicationInstanceId() + "",
-                this.getEntryApplicationInstanceId() + "",
-                this.getPeerHost(),
-                this.getEntryOperationName(),
-                this.getParentOperationName(),
-                this.getPrimaryDistributedTraceId().encode());
-        } else {
-            return "";
+                this.getParentServiceInstanceId() + "",
+                this.getEntryServiceInstanceId() + "",
+                Base64.encode(this.getPeerHost()),
+                Base64.encode(this.getEntryEndpointName()),
+                Base64.encode(this.getParentEndpointName())
+            );
         }
+        return "";
     }
 
     /**
@@ -111,20 +103,28 @@ public class ContextCarrier implements Serializable {
      *
      * @param text carries {@link #traceSegmentId} and {@link #spanId}, with '|' split.
      */
-    ContextCarrier deserialize(String text) {
-        if (text != null) {
-            String[] parts = text.split("\\|", 8);
-            if (parts.length == 8) {
+    ContextCarrier deserialize(String text, HeaderVersion version) {
+        if (text == null) {
+            return this;
+        }
+        // if this carrier is initialized by v2, don't do deserialize again for performance.
+        if (this.isValid(HeaderVersion.v2)) {
+            return this;
+        }
+        if (HeaderVersion.v2 == version) {
+            String[] parts = text.split("-", 9);
+            if (parts.length == 9) {
                 try {
-                    this.traceSegmentId = new ID(parts[0]);
-                    this.spanId = Integer.parseInt(parts[1]);
-                    this.parentApplicationInstanceId = Integer.parseInt(parts[2]);
-                    this.entryApplicationInstanceId = Integer.parseInt(parts[3]);
-                    this.peerHost = parts[4];
-                    this.entryOperationName = parts[5];
-                    this.parentOperationName = parts[6];
-                    this.primaryDistributedTraceId = new PropagatedTraceId(parts[7]);
-                } catch (NumberFormatException e) {
+                    // parts[0] is sample flag, always trace if header exists.
+                    this.primaryDistributedTraceId = new PropagatedTraceId(Base64.decode2UTFString(parts[1]));
+                    this.traceSegmentId = new ID(Base64.decode2UTFString(parts[2]));
+                    this.spanId = Integer.parseInt(parts[3]);
+                    this.parentServiceInstanceId = Integer.parseInt(parts[4]);
+                    this.entryServiceInstanceId = Integer.parseInt(parts[5]);
+                    this.peerHost = Base64.decode2UTFString(parts[6]);
+                    this.entryEndpointName = Base64.decode2UTFString(parts[7]);
+                    this.parentEndpointName = Base64.decode2UTFString(parts[8]);
+                } catch (NumberFormatException ignored) {
 
                 }
             }
@@ -132,41 +132,46 @@ public class ContextCarrier implements Serializable {
         return this;
     }
 
+    public boolean isValid() {
+        return isValid(HeaderVersion.v2);
+    }
+
     /**
      * Make sure this {@link ContextCarrier} has been initialized.
      *
      * @return true for unbroken {@link ContextCarrier} or no-initialized. Otherwise, false;
      */
-    public boolean isValid() {
-        return traceSegmentId != null
-            && traceSegmentId.isValid()
-            && getSpanId() > -1
-            && parentApplicationInstanceId != DictionaryUtil.nullValue()
-            && entryApplicationInstanceId != DictionaryUtil.nullValue()
-            && !StringUtil.isEmpty(peerHost)
-            && !StringUtil.isEmpty(entryOperationName)
-            && !StringUtil.isEmpty(parentOperationName)
-            && primaryDistributedTraceId != null;
+    boolean isValid(HeaderVersion version) {
+        if (HeaderVersion.v2 == version) {
+            return traceSegmentId != null
+                && traceSegmentId.isValid()
+                && getSpanId() > -1
+                && parentServiceInstanceId != DictionaryUtil.nullValue()
+                && entryServiceInstanceId != DictionaryUtil.nullValue()
+                && !StringUtil.isEmpty(peerHost)
+                && primaryDistributedTraceId != null;
+        }
+        return false;
     }
 
-    public String getEntryOperationName() {
-        return entryOperationName;
+    public String getEntryEndpointName() {
+        return entryEndpointName;
     }
 
-    void setEntryOperationName(String entryOperationName) {
-        this.entryOperationName = '#' + entryOperationName;
+    void setEntryEndpointName(String entryEndpointName) {
+        this.entryEndpointName = '#' + entryEndpointName;
     }
 
-    void setEntryOperationId(int entryOperationId) {
-        this.entryOperationName = entryOperationId + "";
+    void setEntryEndpointId(int entryOperationId) {
+        this.entryEndpointName = entryOperationId + "";
     }
 
-    void setParentOperationName(String parentOperationName) {
-        this.parentOperationName = '#' + parentOperationName;
+    void setParentEndpointName(String parentEndpointName) {
+        this.parentEndpointName = '#' + parentEndpointName;
     }
 
-    void setParentOperationId(int parentOperationId) {
-        this.parentOperationName = parentOperationId + "";
+    void setParentEndpointId(int parentOperationId) {
+        this.parentEndpointName = parentOperationId + "";
     }
 
     public ID getTraceSegmentId() {
@@ -185,12 +190,12 @@ public class ContextCarrier implements Serializable {
         this.spanId = spanId;
     }
 
-    public int getParentApplicationInstanceId() {
-        return parentApplicationInstanceId;
+    public int getParentServiceInstanceId() {
+        return parentServiceInstanceId;
     }
 
-    void setParentApplicationInstanceId(int parentApplicationInstanceId) {
-        this.parentApplicationInstanceId = parentApplicationInstanceId;
+    void setParentServiceInstanceId(int parentServiceInstanceId) {
+        this.parentServiceInstanceId = parentServiceInstanceId;
     }
 
     public String getPeerHost() {
@@ -217,16 +222,19 @@ public class ContextCarrier implements Serializable {
         return primaryDistributedTraceId;
     }
 
-    public String getParentOperationName() {
-        return parentOperationName;
+    public String getParentEndpointName() {
+        return parentEndpointName;
     }
 
-    public int getEntryApplicationInstanceId() {
-        return entryApplicationInstanceId;
+    public int getEntryServiceInstanceId() {
+        return entryServiceInstanceId;
     }
 
-    public void setEntryApplicationInstanceId(int entryApplicationInstanceId) {
-        this.entryApplicationInstanceId = entryApplicationInstanceId;
+    public void setEntryServiceInstanceId(int entryServiceInstanceId) {
+        this.entryServiceInstanceId = entryServiceInstanceId;
     }
 
+    public enum HeaderVersion {
+        v2
+    }
 }

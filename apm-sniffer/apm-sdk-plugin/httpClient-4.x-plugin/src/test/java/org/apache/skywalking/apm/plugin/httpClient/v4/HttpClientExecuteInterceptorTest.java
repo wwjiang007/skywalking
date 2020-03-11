@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.plugin.httpClient.v4;
 
 import java.util.List;
@@ -26,7 +25,18 @@ import org.apache.http.HttpResponse;
 import org.apache.http.ProtocolVersion;
 import org.apache.http.RequestLine;
 import org.apache.http.StatusLine;
+import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
+import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
+import org.apache.skywalking.apm.agent.core.context.trace.LogDataEntity;
+import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
+import org.apache.skywalking.apm.agent.core.context.util.TagValuePair;
+import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.EnhancedInstance;
+import org.apache.skywalking.apm.agent.test.helper.SegmentHelper;
+import org.apache.skywalking.apm.agent.test.helper.SpanHelper;
+import org.apache.skywalking.apm.agent.test.tools.AgentServiceRule;
 import org.apache.skywalking.apm.agent.test.tools.SegmentStorage;
+import org.apache.skywalking.apm.agent.test.tools.SegmentStoragePoint;
+import org.apache.skywalking.apm.agent.test.tools.TracingSegmentRunner;
 import org.hamcrest.CoreMatchers;
 import org.junit.Assert;
 import org.junit.Before;
@@ -38,23 +48,11 @@ import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 import org.powermock.modules.junit4.PowerMockRunnerDelegate;
-import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
-import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
-import org.apache.skywalking.apm.agent.core.context.trace.LogDataEntity;
-import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
-import org.apache.skywalking.apm.agent.core.context.util.KeyValuePair;
-import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.EnhancedInstance;
-import org.apache.skywalking.apm.agent.test.helper.SegmentHelper;
-import org.apache.skywalking.apm.agent.test.helper.SpanHelper;
-import org.apache.skywalking.apm.agent.test.tools.AgentServiceRule;
-import org.apache.skywalking.apm.agent.test.tools.SegmentStoragePoint;
-import org.apache.skywalking.apm.agent.test.tools.TracingSegmentRunner;
 
 import static junit.framework.TestCase.assertNotNull;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -114,8 +112,14 @@ public class HttpClientExecuteInterceptorTest {
         });
         when(httpHost.getPort()).thenReturn(8080);
 
-        allArguments = new Object[] {httpHost, request};
-        argumentsType = new Class[] {httpHost.getClass(), request.getClass()};
+        allArguments = new Object[] {
+            httpHost,
+            request
+        };
+        argumentsType = new Class[] {
+            httpHost.getClass(),
+            request.getClass()
+        };
     }
 
     @Test
@@ -128,7 +132,7 @@ public class HttpClientExecuteInterceptorTest {
 
         List<AbstractTracingSpan> spans = SegmentHelper.getSpans(traceSegment);
         assertHttpSpan(spans.get(0));
-        verify(request, times(1)).setHeader(anyString(), anyString());
+        verify(request).setHeader(anyString(), anyString());
     }
 
     @Test
@@ -143,13 +147,13 @@ public class HttpClientExecuteInterceptorTest {
 
         assertThat(spans.size(), is(1));
 
-        List<KeyValuePair> tags = SpanHelper.getTags(spans.get(0));
+        List<TagValuePair> tags = SpanHelper.getTags(spans.get(0));
         assertThat(tags.size(), is(3));
         assertThat(tags.get(2).getValue(), is("500"));
 
         assertHttpSpan(spans.get(0));
         assertThat(SpanHelper.getErrorOccurred(spans.get(0)), is(true));
-        verify(request, times(1)).setHeader(anyString(), anyString());
+        verify(request).setHeader(anyString(), anyString());
     }
 
     @Test
@@ -167,8 +171,37 @@ public class HttpClientExecuteInterceptorTest {
         assertHttpSpan(span);
         assertThat(SpanHelper.getErrorOccurred(span), is(true));
         assertHttpSpanErrorLog(SpanHelper.getLogs(span));
-        verify(request, times(1)).setHeader(anyString(), anyString());
+        verify(request).setHeader(anyString(), anyString());
 
+    }
+
+    @Test
+    public void testUriNotProtocol() throws Throwable {
+        when(request.getRequestLine()).thenReturn(new RequestLine() {
+            @Override
+            public String getMethod() {
+                return "GET";
+            }
+
+            @Override
+            public ProtocolVersion getProtocolVersion() {
+                return new ProtocolVersion("http", 1, 1);
+            }
+
+            @Override
+            public String getUri() {
+                return "/test-web/test";
+            }
+        });
+        httpClientExecuteInterceptor.beforeMethod(enhancedInstance, null, allArguments, argumentsType, null);
+        httpClientExecuteInterceptor.afterMethod(enhancedInstance, null, allArguments, argumentsType, httpResponse);
+
+        Assert.assertThat(segmentStorage.getTraceSegments().size(), is(1));
+        TraceSegment traceSegment = segmentStorage.getTraceSegments().get(0);
+
+        List<AbstractTracingSpan> spans = SegmentHelper.getSpans(traceSegment);
+        assertHttpSpan(spans.get(0));
+        verify(request).setHeader(anyString(), anyString());
     }
 
     private void assertHttpSpanErrorLog(List<LogDataEntity> logs) {
@@ -176,7 +209,9 @@ public class HttpClientExecuteInterceptorTest {
         LogDataEntity logData = logs.get(0);
         Assert.assertThat(logData.getLogs().size(), is(4));
         Assert.assertThat(logData.getLogs().get(0).getValue(), CoreMatchers.<Object>is("error"));
-        Assert.assertThat(logData.getLogs().get(1).getValue(), CoreMatchers.<Object>is(RuntimeException.class.getName()));
+        Assert.assertThat(logData.getLogs()
+                                 .get(1)
+                                 .getValue(), CoreMatchers.<Object>is(RuntimeException.class.getName()));
         Assert.assertThat(logData.getLogs().get(2).getValue(), is("testException"));
         assertNotNull(logData.getLogs().get(3).getValue());
     }
@@ -184,7 +219,7 @@ public class HttpClientExecuteInterceptorTest {
     private void assertHttpSpan(AbstractTracingSpan span) {
         assertThat(span.getOperationName(), is("/test-web/test"));
         assertThat(SpanHelper.getComponentId(span), is(2));
-        List<KeyValuePair> tags = SpanHelper.getTags(span);
+        List<TagValuePair> tags = SpanHelper.getTags(span);
         assertThat(tags.get(0).getValue(), is("http://127.0.0.1:8080/test-web/test"));
         assertThat(tags.get(1).getValue(), is("GET"));
         assertThat(span.isExit(), is(true));

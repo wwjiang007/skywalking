@@ -16,7 +16,6 @@
  *
  */
 
-
 package org.apache.skywalking.apm.plugin.motan;
 
 import com.weibo.api.motan.rpc.Request;
@@ -24,7 +23,7 @@ import com.weibo.api.motan.rpc.Response;
 import com.weibo.api.motan.rpc.URL;
 import java.util.HashMap;
 import java.util.List;
-import org.apache.skywalking.apm.agent.core.context.SW3CarrierItem;
+import org.apache.skywalking.apm.agent.core.context.SW6CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.SpanLayer;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
@@ -108,7 +107,7 @@ public class MotanProviderInterceptorTest {
     @Test
     public void testInvokerWithRefSegment() throws Throwable {
         HashMap attachments = new HashMap();
-        attachments.put(SW3CarrierItem.HEADER_NAME, "1.123.456|3|1|1|#192.168.1.8:18002|#/portal/|#/testEntrySpan|#AQA*#AQA*Et0We0tQNQA*");
+        attachments.put(SW6CarrierItem.HEADER_NAME, "1-MC4wLjA=-MS4xMjMuNDU2-3-1-1-IzE5Mi4xNjguMS44OjE4MDAy-Iy9wb3J0YWwv-Iy90ZXN0RW50cnlTcGFu");
         when(request.getAttachments()).thenReturn(attachments);
 
         invokeInterceptor.beforeMethod(enhancedInstance, null, arguments, argumentType, null);
@@ -154,7 +153,7 @@ public class MotanProviderInterceptorTest {
     private void assertRefSegment(TraceSegmentRef primaryRef) {
         assertThat(SegmentRefHelper.getTraceSegmentId(primaryRef).toString(), is("1.123.456"));
         assertThat(SegmentRefHelper.getSpanId(primaryRef), is(3));
-        assertThat(SegmentRefHelper.getEntryApplicationInstanceId(primaryRef), is(1));
+        assertThat(SegmentRefHelper.getEntryServiceInstanceId(primaryRef), is(1));
         assertThat(SegmentRefHelper.getPeerHost(primaryRef), is("192.168.1.8:18002"));
     }
 
