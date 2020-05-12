@@ -18,6 +18,7 @@
 
 package org.apache.skywalking.oap.server.storage.plugin.elasticsearch;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
@@ -25,23 +26,16 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Properties;
 import org.apache.skywalking.apm.util.StringUtil;
-import org.apache.skywalking.oap.server.core.Const;
 import org.apache.skywalking.oap.server.core.CoreModule;
-import org.apache.skywalking.oap.server.core.analysis.Downsampling;
-import org.apache.skywalking.oap.server.core.config.ConfigService;
 import org.apache.skywalking.oap.server.core.storage.IBatchDAO;
 import org.apache.skywalking.oap.server.core.storage.IHistoryDeleteDAO;
-import org.apache.skywalking.oap.server.core.storage.IRegisterLockDAO;
 import org.apache.skywalking.oap.server.core.storage.StorageDAO;
 import org.apache.skywalking.oap.server.core.storage.StorageException;
 import org.apache.skywalking.oap.server.core.storage.StorageModule;
-import org.apache.skywalking.oap.server.core.storage.cache.IEndpointInventoryCacheDAO;
-import org.apache.skywalking.oap.server.core.storage.cache.INetworkAddressInventoryCacheDAO;
-import org.apache.skywalking.oap.server.core.storage.cache.IServiceInstanceInventoryCacheDAO;
-import org.apache.skywalking.oap.server.core.storage.cache.IServiceInventoryCacheDAO;
+import org.apache.skywalking.oap.server.core.storage.cache.INetworkAddressAliasDAO;
+import org.apache.skywalking.oap.server.core.storage.model.ModelCreator;
 import org.apache.skywalking.oap.server.core.storage.profile.IProfileTaskLogQueryDAO;
 import org.apache.skywalking.oap.server.core.storage.profile.IProfileTaskQueryDAO;
 import org.apache.skywalking.oap.server.core.storage.profile.IProfileThreadSnapshotQueryDAO;
@@ -60,17 +54,13 @@ import org.apache.skywalking.oap.server.library.module.ModuleDefine;
 import org.apache.skywalking.oap.server.library.module.ModuleProvider;
 import org.apache.skywalking.oap.server.library.module.ModuleStartException;
 import org.apache.skywalking.oap.server.library.module.ServiceNotProvidedException;
+import org.apache.skywalking.oap.server.library.util.MultipleFilesChangeMonitor;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.base.BatchProcessEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.base.HistoryDeleteEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.base.StorageEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.base.StorageEsInstaller;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.base.TimeSeriesUtils;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.cache.EndpointInventoryCacheEsDAO;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.cache.NetworkAddressInventoryCacheEsDAO;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.cache.ServiceInstanceInventoryCacheDAO;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.cache.ServiceInventoryCacheEsDAO;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.lock.RegisterLockDAOImpl;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.lock.RegisterLockInstaller;
+import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.cache.NetworkAddressAliasEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.AggregationQueryEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.AlarmQueryEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.LogQueryEsDAO;
@@ -82,8 +72,10 @@ import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.Profi
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.TopNRecordsQueryEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.TopologyQueryEsDAO;
 import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.query.TraceQueryEsDAO;
-import org.apache.skywalking.oap.server.storage.plugin.elasticsearch.ttl.ElasticsearchStorageTTL;
 
+/**
+ * The storage provider for ElasticSearch 6.
+ */
 public class StorageModuleElasticsearchProvider extends ModuleProvider {
 
     protected final StorageModuleElasticsearchConfig config;
@@ -117,35 +109,51 @@ public class StorageModuleElasticsearchProvider extends ModuleProvider {
         if (config.getDayStep() > 1) {
             TimeSeriesUtils.setDAY_STEP(config.getDayStep());
         }
+
+        if (!StringUtil.isEmpty(config.getSecretsManagementFile())) {
+            MultipleFilesChangeMonitor monitor = new MultipleFilesChangeMonitor(
+                10, readableContents -> {
+                final byte[] secretsFileContent = readableContents.get(0);
+                if (secretsFileContent == null) {
+                    return;
+                }
+                Properties secrets = new Properties();
+                secrets.load(new ByteArrayInputStream(secretsFileContent));
+                config.setUser(secrets.getProperty("user", null));
+                config.setPassword(secrets.getProperty("password", null));
+                config.setTrustStorePass(secrets.getProperty("trustStorePass", null));
+
+                if (elasticSearchClient == null) {
+                    // In the startup process, we just need to change the username/password
+                } else {
+                    // The client has connected, updates the config and connects again.
+                    elasticSearchClient.setUser(config.getUser());
+                    elasticSearchClient.setPassword(config.getPassword());
+                    elasticSearchClient.setTrustStorePass(config.getTrustStorePass());
+                    elasticSearchClient.connect();
+                }
+            }, config.getSecretsManagementFile(), config.getTrustStorePass());
+            /**
+             * By leveraging the sync update check feature when startup.
+             */
+            monitor.start();
+        }
+
         elasticSearchClient = new ElasticSearchClient(
             config.getClusterNodes(), config.getProtocol(), config.getTrustStorePath(), config
             .getTrustStorePass(), config.getUser(), config.getPassword(),
-            indexNameConverters(config.getNameSpace(), config.isEnablePackedDownsampling())
+            indexNameConverters(config.getNameSpace())
         );
 
         this.registerServiceImplementation(
             IBatchDAO.class, new BatchProcessEsDAO(elasticSearchClient, config.getBulkActions(), config
                 .getFlushInterval(), config.getConcurrentRequests()));
         this.registerServiceImplementation(StorageDAO.class, new StorageEsDAO(elasticSearchClient));
-        this.registerServiceImplementation(IRegisterLockDAO.class, new RegisterLockDAOImpl(elasticSearchClient));
         this.registerServiceImplementation(
-            IHistoryDeleteDAO.class, new HistoryDeleteEsDAO(getManager(), elasticSearchClient,
-                                                            new ElasticsearchStorageTTL(),
-                                                            config.isEnablePackedDownsampling()
-            ));
-
+            IHistoryDeleteDAO.class, new HistoryDeleteEsDAO(elasticSearchClient));
         this.registerServiceImplementation(
-            IServiceInventoryCacheDAO.class, new ServiceInventoryCacheEsDAO(elasticSearchClient, config
+            INetworkAddressAliasDAO.class, new NetworkAddressAliasEsDAO(elasticSearchClient, config
                 .getResultWindowMaxSize()));
-        this.registerServiceImplementation(
-            IServiceInstanceInventoryCacheDAO.class, new ServiceInstanceInventoryCacheDAO(elasticSearchClient, config
-                .getResultWindowMaxSize()));
-        this.registerServiceImplementation(
-            IEndpointInventoryCacheDAO.class, new EndpointInventoryCacheEsDAO(elasticSearchClient));
-        this.registerServiceImplementation(
-            INetworkAddressInventoryCacheDAO.class, new NetworkAddressInventoryCacheEsDAO(elasticSearchClient, config
-                .getResultWindowMaxSize()));
-
         this.registerServiceImplementation(ITopologyQueryDAO.class, new TopologyQueryEsDAO(elasticSearchClient));
         this.registerServiceImplementation(IMetricsQueryDAO.class, new MetricsQueryEsDAO(elasticSearchClient));
         this.registerServiceImplementation(
@@ -156,7 +164,6 @@ public class StorageModuleElasticsearchProvider extends ModuleProvider {
         this.registerServiceImplementation(IAlarmQueryDAO.class, new AlarmQueryEsDAO(elasticSearchClient));
         this.registerServiceImplementation(ITopNRecordsQueryDAO.class, new TopNRecordsQueryEsDAO(elasticSearchClient));
         this.registerServiceImplementation(ILogQueryDAO.class, new LogQueryEsDAO(elasticSearchClient));
-
         this.registerServiceImplementation(
             IProfileTaskQueryDAO.class, new ProfileTaskQueryEsDAO(elasticSearchClient, config
                 .getProfileTaskQueryMaxSize()));
@@ -170,16 +177,11 @@ public class StorageModuleElasticsearchProvider extends ModuleProvider {
 
     @Override
     public void start() throws ModuleStartException {
-        overrideCoreModuleTTLConfig();
-
         try {
             elasticSearchClient.connect();
+            StorageEsInstaller installer = new StorageEsInstaller(elasticSearchClient, getManager(), config);
 
-            StorageEsInstaller installer = new StorageEsInstaller(getManager(), config);
-            installer.install(elasticSearchClient);
-
-            RegisterLockInstaller lockInstaller = new RegisterLockInstaller(elasticSearchClient);
-            lockInstaller.install();
+            getManager().find(CoreModule.NAME).provider().getService(ModelCreator.class).addModelListener(installer);
         } catch (StorageException | IOException | KeyStoreException | NoSuchAlgorithmException | KeyManagementException | CertificateException e) {
             throw new ModuleStartException(e.getMessage(), e);
         }
@@ -194,53 +196,10 @@ public class StorageModuleElasticsearchProvider extends ModuleProvider {
         return new String[] {CoreModule.NAME};
     }
 
-    private void overrideCoreModuleTTLConfig() {
-        ConfigService configService = getManager().find(CoreModule.NAME).provider().getService(ConfigService.class);
-        configService.getDataTTLConfig().setRecordDataTTL(config.getRecordDataTTL());
-        configService.getDataTTLConfig().setMinuteMetricsDataTTL(config.getMinuteMetricsDataTTL());
-        configService.getDataTTLConfig().setHourMetricsDataTTL(config.getHourMetricsDataTTL());
-        configService.getDataTTLConfig().setDayMetricsDataTTL(config.getDayMetricsDataTTL());
-        configService.getDataTTLConfig().setMonthMetricsDataTTL(config.getMonthMetricsDataTTL());
-    }
-
-    public static List<IndexNameConverter> indexNameConverters(String namespace, boolean enablePackedDownsampling) {
+    public static List<IndexNameConverter> indexNameConverters(String namespace) {
         List<IndexNameConverter> converters = new ArrayList<>();
-
-        if (enablePackedDownsampling) {
-            // Packed downsampling converter.
-            converters.add(new PackedDownsamplingConverter());
-        }
         converters.add(new NamespaceConverter(namespace));
         return converters;
-    }
-
-    private static class PackedDownsamplingConverter implements IndexNameConverter {
-        private final String[] removableSuffixes = new String[] {
-            Const.ID_SPLIT + Downsampling.Day.getName(),
-            Const.ID_SPLIT + Downsampling.Hour.getName()
-        };
-        private final Map<String, String> convertedIndexNames = new ConcurrentHashMap<>();
-
-        public PackedDownsamplingConverter() {
-        }
-
-        @Override
-        public String convert(final String indexName) {
-            String convertedName = convertedIndexNames.get(indexName);
-            if (convertedName != null) {
-                return convertedName;
-            }
-            convertedName = indexName;
-            for (final String removableSuffix : removableSuffixes) {
-                String mayReplaced = indexName.replaceAll(removableSuffix, "");
-                if (mayReplaced.length() != convertedName.length()) {
-                    convertedName = mayReplaced;
-                    break;
-                }
-            }
-            convertedIndexNames.put(indexName, convertedName);
-            return convertedName;
-        }
     }
 
     private static class NamespaceConverter implements IndexNameConverter {

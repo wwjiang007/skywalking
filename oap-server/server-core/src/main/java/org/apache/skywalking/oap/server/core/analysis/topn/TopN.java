@@ -35,11 +35,11 @@ public abstract class TopN extends Record implements ComparableStorageData {
 
     @Getter
     @Setter
-    @Column(columnName = STATEMENT, content = true)
+    @Column(columnName = STATEMENT, storageOnly = true)
     private String statement;
     @Getter
     @Setter
-    @Column(columnName = LATENCY)
+    @Column(columnName = LATENCY, dataType = Column.ValueDataType.SAMPLED_RECORD)
     private long latency;
     @Getter
     @Setter
@@ -48,7 +48,7 @@ public abstract class TopN extends Record implements ComparableStorageData {
     @Getter
     @Setter
     @Column(columnName = SERVICE_ID)
-    private int serviceId;
+    private String serviceId;
 
     @Override
     public int compareTo(Object o) {

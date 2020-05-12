@@ -29,6 +29,9 @@
 # ######
 # Languages declare which languages are using this component. Multi languages should be separated by `,`
 
+Unknown:
+  id: 0
+  language: All
 Tomcat:
   id: 1
   languages: Java
@@ -284,6 +287,12 @@ Undertow:
 Finagle:
   id: 85
   languages: Java,Scala
+Mariadb:
+  id: 86
+  languages: Java
+mariadb-jdbc:
+  id: 87
+  languages: Java
 
 # .NET/.NET Core components
 # [3000, 4000) for C#/.NET only
@@ -359,12 +368,20 @@ ServiceCombMesher:
 ServiceCombServiceCenter:
   id: 5002
   languages: Golang
+MOSN:
+  id: 5003
+  languages: Golang
 
 # Lua components
 # [6000, 7000) for Lua agent
 Nginx:
   id: 6000
   languages: Lua
+
+# [7000, 8000) are reserved for Python components
+Python:
+  id: 7000
+  languages: Python
 
 # Component Server mapping defines the server display names of some components
 # e.g.
@@ -403,3 +420,4 @@ Component-Server-Mappings:
   pulsar-producer: Pulsar
   pulsar-consumer: Pulsar
   rest-high-level-client: Elasticsearch
+  mariadb-jdbc: Mariadb

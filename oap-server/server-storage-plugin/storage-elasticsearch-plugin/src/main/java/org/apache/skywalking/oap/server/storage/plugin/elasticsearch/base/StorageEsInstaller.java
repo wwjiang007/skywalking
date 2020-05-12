@@ -41,29 +41,25 @@ public class StorageEsInstaller extends ModelInstaller {
     private final StorageModuleElasticsearchConfig config;
     protected final ColumnTypeEsMapping columnTypeEsMapping;
 
-    public StorageEsInstaller(ModuleManager moduleManager, final StorageModuleElasticsearchConfig config) {
-        super(moduleManager);
+    public StorageEsInstaller(Client client, ModuleManager moduleManager, final StorageModuleElasticsearchConfig config) {
+        super(client, moduleManager);
         this.columnTypeEsMapping = new ColumnTypeEsMapping();
         this.config = config;
     }
 
     @Override
-    protected boolean isExists(Client client, Model model) throws StorageException {
+    protected boolean isExists(Model model) throws StorageException {
         ElasticSearchClient esClient = (ElasticSearchClient) client;
         try {
-            if (model.isCapableOfTimeSeries()) {
-                String timeSeriesIndexName = TimeSeriesUtils.timeSeries(model);
-                return esClient.isExistsTemplate(model.getName()) && esClient.isExistsIndex(timeSeriesIndexName);
-            } else {
-                return esClient.isExistsIndex(model.getName());
-            }
+            String timeSeriesIndexName = TimeSeriesUtils.latestWriteIndexName(model);
+            return esClient.isExistsTemplate(model.getName()) && esClient.isExistsIndex(timeSeriesIndexName);
         } catch (IOException e) {
             throw new StorageException(e.getMessage());
         }
     }
 
     @Override
-    protected void createTable(Client client, Model model) throws StorageException {
+    protected void createTable(Model model) throws StorageException {
         ElasticSearchClient esClient = (ElasticSearchClient) client;
 
         Map<String, Object> settings = createSetting(model.isRecord());
@@ -72,28 +68,20 @@ public class StorageEsInstaller extends ModelInstaller {
             .toString());
 
         try {
-            if (model.isCapableOfTimeSeries()) {
-                if (!esClient.isExistsTemplate(model.getName())) {
-                    boolean isAcknowledged = esClient.createTemplate(model.getName(), settings, mapping);
-                    log.info(
-                        "create {} index template finished, isAcknowledged: {}", model.getName(), isAcknowledged);
-                    if (!isAcknowledged) {
-                        throw new StorageException("create " + model.getName() + " index template failure, ");
-                    }
-                }
-                String timeSeriesIndexName = TimeSeriesUtils.timeSeries(model);
-                if (!esClient.isExistsIndex(timeSeriesIndexName)) {
-                    boolean isAcknowledged = esClient.createIndex(timeSeriesIndexName);
-                    log.info("create {} index finished, isAcknowledged: {}", timeSeriesIndexName, isAcknowledged);
-                    if (!isAcknowledged) {
-                        throw new StorageException("create " + timeSeriesIndexName + " time series index failure, ");
-                    }
-                }
-            } else {
-                boolean isAcknowledged = esClient.createIndex(model.getName(), settings, mapping);
-                log.info("create {} index finished, isAcknowledged: {}", model.getName(), isAcknowledged);
+            if (!esClient.isExistsTemplate(model.getName())) {
+                boolean isAcknowledged = esClient.createTemplate(model.getName(), settings, mapping);
+                log.info(
+                    "create {} index template finished, isAcknowledged: {}", model.getName(), isAcknowledged);
                 if (!isAcknowledged) {
-                    throw new StorageException("create " + model.getName() + " index failure, ");
+                    throw new StorageException("create " + model.getName() + " index template failure, ");
+                }
+            }
+            String timeSeriesIndexName = TimeSeriesUtils.latestWriteIndexName(model);
+            if (!esClient.isExistsIndex(timeSeriesIndexName)) {
+                boolean isAcknowledged = esClient.createIndex(timeSeriesIndexName);
+                log.info("create {} index finished, isAcknowledged: {}", timeSeriesIndexName, isAcknowledged);
+                if (!isAcknowledged) {
+                    throw new StorageException("create " + timeSeriesIndexName + " time series index failure, ");
                 }
             }
         } catch (IOException e) {
@@ -139,14 +127,12 @@ public class StorageEsInstaller extends ModelInstaller {
                 matchColumn.put("type", "text");
                 matchColumn.put("analyzer", "oap_analyzer");
                 properties.put(matchCName, matchColumn);
-            } else if (columnDefine.isContent()) {
-                Map<String, Object> column = new HashMap<>();
-                column.put("type", "text");
-                column.put("index", false);
-                properties.put(columnDefine.getColumnName().getName(), column);
             } else {
                 Map<String, Object> column = new HashMap<>();
                 column.put("type", columnTypeEsMapping.transform(columnDefine.getType()));
+                if (columnDefine.isStorageOnly()) {
+                    column.put("index", false);
+                }
                 properties.put(columnDefine.getColumnName().getName(), column);
             }
         }

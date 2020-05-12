@@ -60,7 +60,7 @@ public interface AbstractTracerContext {
      *
      * @return the string represents the id.
      */
-    String getReadableGlobalTraceId();
+    String getReadablePrimaryTraceId();
 
     /**
      * Create an entry span
@@ -115,4 +115,8 @@ public interface AbstractTracerContext {
      */
     void asyncStop(AsyncSpan span);
 
+    /**
+     * Get current correlation context
+     */
+    CorrelationContext getCorrelationContext();
 }

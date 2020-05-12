@@ -1,6 +1,11 @@
 # Backend storage
-SkyWalking storage is pluggable, we have provided the following storage solutions, you could easily 
-use is by changing the `application.yml`
+SkyWalking storage is pluggable, we have provided the following storage solutions, you could easily
+use one of them by specifying it as the `selector` in the `application.yml`：
+
+```yaml
+storage:
+  selector: ${SW_STORAGE:elasticsearch7}
+```
 
 Native supported storage
 - H2
@@ -21,6 +26,7 @@ you could set the target to H2 in **Embedded**, **Server** and **Mixed** modes.
 Setting fragment example
 ```yaml
 storage:
+  selector: ${SW_STORAGE:h2}
   h2:
     driver: org.h2.jdbcx.JdbcDataSource
     url: jdbc:h2:mem:skywalking-oap-db
@@ -40,25 +46,21 @@ For now, ElasticSearch 6 and ElasticSearch 7 share the same configurations, as f
 
 ```yaml
 storage:
+  selector: ${SW_STORAGE:elasticsearch}
   elasticsearch:
-    # nameSpace: ${SW_NAMESPACE:""}
-    # user: ${SW_ES_USER:""} # User needs to be set when Http Basic authentication is enabled
-    # password: ${SW_ES_PASSWORD:""} # Password to be set when Http Basic authentication is enabled
-    #trustStorePath: ${SW_SW_STORAGE_ES_SSL_JKS_PATH:""}
-    #trustStorePass: ${SW_SW_STORAGE_ES_SSL_JKS_PASS:""}
-    enablePackedDownsampling: ${SW_STORAGE_ENABLE_PACKED_DOWNSAMPLING:true} # Hour and Day metrics will be merged into minute index.
-    dayStep: ${SW_STORAGE_DAY_STEP:1} # Represent the number of days in the one minute/hour/day index.
+    nameSpace: ${SW_NAMESPACE:""}
     clusterNodes: ${SW_STORAGE_ES_CLUSTER_NODES:localhost:9200}
     protocol: ${SW_STORAGE_ES_HTTP_PROTOCOL:"http"}
+    trustStorePath: ${SW_SW_STORAGE_ES_SSL_JKS_PATH:""}
+    trustStorePass: ${SW_SW_STORAGE_ES_SSL_JKS_PASS:""}
+    user: ${SW_ES_USER:""}
+    password: ${SW_ES_PASSWORD:""}
+    secretsManagementFile: ${SW_ES_SECRETS_MANAGEMENT_FILE:""} # Secrets management file in the properties format includes the username, password, which are managed by 3rd party tool.
+    dayStep: ${SW_STORAGE_DAY_STEP:1} # Represent the number of days in the one minute/hour/day index.
     indexShardsNumber: ${SW_STORAGE_ES_INDEX_SHARDS_NUMBER:2}
     indexReplicasNumber: ${SW_STORAGE_ES_INDEX_REPLICAS_NUMBER:0}
-    # Those data TTL settings will override the same settings in core module.
-    recordDataTTL: ${SW_STORAGE_ES_RECORD_DATA_TTL:7} # Unit is day
-    otherMetricsDataTTL: ${SW_STORAGE_ES_OTHER_METRIC_DATA_TTL:45} # Unit is day
-    monthMetricsDataTTL: ${SW_STORAGE_ES_MONTH_METRIC_DATA_TTL:18} # Unit is month
     # Batch process setting, refer to https://www.elastic.co/guide/en/elasticsearch/client/java-api/5.5/java-docs-bulk-processor.html
-    bulkActions: ${SW_STORAGE_ES_BULK_ACTIONS:2000} # Execute the bulk every 2000 requests
-    bulkSize: ${SW_STORAGE_ES_BULK_SIZE:20} # flush the bulk every 20mb
+    bulkActions: ${SW_STORAGE_ES_BULK_ACTIONS:1000} # Execute the bulk every 1000 requests
     flushInterval: ${SW_STORAGE_ES_FLUSH_INTERVAL:10} # flush the bulk every 10 seconds whatever the number of requests
     concurrentRequests: ${SW_STORAGE_ES_CONCURRENT_REQUESTS:2} # the number of concurrent requests
     resultWindowMaxSize: ${SW_STORAGE_ES_QUERY_MAX_WINDOW_SIZE:10000}
@@ -71,20 +73,13 @@ storage:
 In order to use ElasticSearch 7, comment/remove the section `storage/elasticsearch` and find the corresponding config section(`storage/elasticsearch7`),
 uncomment to enable it.
 
-### Downsampling Data Packing
-
-Downsampling data packing(`storage/elasticsearch/enablePackedDownsampling`, default activated) is a new feature since 7.0.0.  
-Metrics data has 4 different precisions,based on `core/default/downsampling` configurations. 
-In previous(6.x), every precision of each metrics had one separated
-index. After this is activated, metrics of day and hour precisions are merged into minute precision. The number of indexes
-decreased, and cause less payload to the ElasticSearch server.
-
 ### ElasticSearch 6 With Https SSL Encrypting communications.
 
 example: 
 
 ```yaml
 storage:
+  selector: ${SW_STORAGE:elasticsearch}
   elasticsearch:
     # nameSpace: ${SW_NAMESPACE:""}
     user: ${SW_ES_USER:""} # User needs to be set when Http Basic authentication is enabled
@@ -95,10 +90,6 @@ storage:
     protocol: ${SW_STORAGE_ES_HTTP_PROTOCOL:"https"}
     indexShardsNumber: ${SW_STORAGE_ES_INDEX_SHARDS_NUMBER:2}
     indexReplicasNumber: ${SW_STORAGE_ES_INDEX_REPLICAS_NUMBER:0}
-    # Those data TTL settings will override the same settings in core module.
-    recordDataTTL: ${SW_STORAGE_ES_RECORD_DATA_TTL:7} # Unit is day
-    otherMetricsDataTTL: ${SW_STORAGE_ES_OTHER_METRIC_DATA_TTL:45} # Unit is day
-    monthMetricsDataTTL: ${SW_STORAGE_ES_MONTH_METRIC_DATA_TTL:18} # Unit is month
     # Batch process setting, refer to https://www.elastic.co/guide/en/elasticsearch/client/java-api/5.5/java-docs-bulk-processor.html
     bulkActions: ${SW_STORAGE_ES_BULK_ACTIONS:2000} # Execute the bulk every 2000 requests
     bulkSize: ${SW_STORAGE_ES_BULK_SIZE:20} # flush the bulk every 20mb
@@ -106,10 +97,8 @@ storage:
     concurrentRequests: ${SW_STORAGE_ES_CONCURRENT_REQUESTS:2} # the number of concurrent requests
     advanced: ${SW_STORAGE_ES_ADVANCED:""}
 ```
-
-
-### Data TTL
-TTL in ElasticSearch overrides the settings of core, read [ElasticSearch section in TTL document](ttl.md#elasticsearch-6-storage-ttl)
+- File at `trustStorePath` is being monitored, once it is changed, the ElasticSearch client will do reconnecting.
+- `trustStorePass` could be changed on the runtime through [**Secrets Management File Of ElasticSearch Authentication**](#secrets-management-file-of-elasticsearch-authentication).
 
 ### Daily Index Step
 Daily index step(`storage/elasticsearch/dayStep`, default 1) represents the index creation period. In this period, several days(dayStep value)' metrics are saved.
@@ -123,6 +112,20 @@ Such as, if dayStep == 11,
 1. data in [2000-01-12, 2000-01-22] will be merged into the index-20000112.
 
 NOTICE, TTL deletion would be affected by these. You should set an extra more dayStep in your TTL. Such as you want to TTL == 30 days and dayStep == 10, you actually need to set TTL = 40;
+
+### Secrets Management File Of ElasticSearch Authentication
+The value of `secretsManagementFile` should point to the secrets management file absolute path. 
+The file includes username, password and JKS password of ElasticSearch server in the properties format.
+```properties
+user=xxx
+password=yyy
+trustStorePass=zzz
+```
+
+The major difference between using `user, password, trustStorePass` configs in the `application.yaml` file is, the **Secrets Management File** is being watched by the OAP server. 
+Once it is changed manually or through 3rd party tool, such as [Vault](https://github.com/hashicorp/vault), 
+the storage provider will use the new username, password and JKS password to establish the connection and close the old one. If the information exist in the file,
+the `user/password` will be overrided.
 
 ### Advanced Configurations For Elasticsearch Index
 You can add advanced configurations in `JSON` format to set `ElasticSearch index settings` by following [ElasticSearch doc](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html)
@@ -157,6 +160,7 @@ This implementation shares most of `elasticsearch`, just extend to support zipki
 It has all same configs.
 ```yaml
 storage:
+  selector: ${SW_STORAGE:zipkin-elasticsearch}
   zipkin-elasticsearch:
     nameSpace: ${SW_NAMESPACE:""}
     clusterNodes: ${SW_STORAGE_ES_CLUSTER_NODES:localhost:9200}
@@ -165,10 +169,6 @@ storage:
     password: ${SW_ES_PASSWORD:""}
     indexShardsNumber: ${SW_STORAGE_ES_INDEX_SHARDS_NUMBER:2}
     indexReplicasNumber: ${SW_STORAGE_ES_INDEX_REPLICAS_NUMBER:0}
-    # Those data TTL settings will override the same settings in core module.
-    recordDataTTL: ${SW_STORAGE_ES_RECORD_DATA_TTL:7} # Unit is day
-    otherMetricsDataTTL: ${SW_STORAGE_ES_OTHER_METRIC_DATA_TTL:45} # Unit is day
-    monthMetricsDataTTL: ${SW_STORAGE_ES_MONTH_METRIC_DATA_TTL:18} # Unit is month
     # Batch process setting, refer to https://www.elastic.co/guide/en/elasticsearch/client/java-api/5.5/java-docs-bulk-processor.html
     bulkActions: ${SW_STORAGE_ES_BULK_ACTIONS:2000} # Execute the bulk every 2000 requests
     bulkSize: ${SW_STORAGE_ES_BULK_SIZE:20} # flush the bulk every 20mb
@@ -181,6 +181,7 @@ This implementation shares most of `elasticsearch`, just extend to support zipki
 It has all same configs.
 ```yaml
 storage:
+  selector: ${SW_STORAGE:jaeger-elasticsearch}
   jaeger-elasticsearch:
     nameSpace: ${SW_NAMESPACE:""}
     clusterNodes: ${SW_STORAGE_ES_CLUSTER_NODES:localhost:9200}
@@ -189,10 +190,6 @@ storage:
     password: ${SW_ES_PASSWORD:""}
     indexShardsNumber: ${SW_STORAGE_ES_INDEX_SHARDS_NUMBER:2}
     indexReplicasNumber: ${SW_STORAGE_ES_INDEX_REPLICAS_NUMBER:0}
-    # Those data TTL settings will override the same settings in core module.
-    recordDataTTL: ${SW_STORAGE_ES_RECORD_DATA_TTL:7} # Unit is day
-    otherMetricsDataTTL: ${SW_STORAGE_ES_OTHER_METRIC_DATA_TTL:45} # Unit is day
-    monthMetricsDataTTL: ${SW_STORAGE_ES_MONTH_METRIC_DATA_TTL:18} # Unit is month
     # Batch process setting, refer to https://www.elastic.co/guide/en/elasticsearch/client/java-api/5.5/java-docs-bulk-processor.html
     bulkActions: ${SW_STORAGE_ES_BULK_ACTIONS:2000} # Execute the bulk every 2000 requests
     bulkSize: ${SW_STORAGE_ES_BULK_SIZE:20} # flush the bulk every 20mb
@@ -204,10 +201,6 @@ storage:
 ### About Namespace
 When namespace is set, names of all indexes in ElasticSearch will use it as prefix.
 
-### About Authentication
-We only support [basic authentication](https://www.elastic.co/guide/en/elasticsearch/client/java-rest/6.6/_basic_authentication.html). If you need that, you could set `user` and `password`.
-For how to enable http basic authentication, you could read this https://brudtkuhl.com/blog/securing-elasticsearch/
-
 
 ## MySQL
 Active MySQL as storage, set storage provider to **mysql**. 
@@ -217,6 +210,7 @@ Please download MySQL driver by yourself. Copy the connection driver jar to `oap
 
 ```yaml
 storage:
+  selector: ${SW_STORAGE:mysql}
   mysql:
     properties:
       jdbcUrl: ${SW_JDBC_URL:"jdbc:mysql://localhost:3306/swtest"}
@@ -237,6 +231,7 @@ Active TiDB as storage, set storage provider to **mysql**.
 
 ```yaml
 storage:
+  selector: ${SW_STORAGE:mysql}
   mysql:
     properties:
       jdbcUrl: ${SW_JDBC_URL:"jdbc:mysql://localhost:3306/swtest"}
@@ -252,28 +247,12 @@ All connection related settings including link url, username and password are in
 These settings can refer to the configuration of *MySQL* above.
 
 ## InfluxDB
-InfluxDB as storage since SkyWalking 7.0. It depends on `H2/MySQL` storage-plugin to store `metadata` like `Inventory` and `ProfileTask`. So, when we set `InfluxDB` as storage provider. We need to configure properties of InfluxDB and Metabase.
+InfluxDB storage provides a time-series database as a new storage option.
 
 ```yaml
 storage:
-  influx:
-    # Metadata storage provider configuration
-    metabaseType: ${SW_STORAGE_METABASE_TYPE:H2} # There are 2 options as Metabase provider, H2 or MySQL.
-    h2Props:
-      dataSourceClassName: ${SW_STORAGE_METABASE_DRIVER:org.h2.jdbcx.JdbcDataSource}
-      dataSource.url: ${SW_STORAGE_METABASE_URL:jdbc:h2:mem:skywalking-oap-db}
-      dataSource.user: ${SW_STORAGE_METABASE_USER:sa}
-      dataSource.password: ${SW_STORAGE_METABASE_PASSWORD:}
-    mysqlProps:
-      jdbcUrl: ${SW_STORAGE_METABASE_URL:"jdbc:mysql://localhost:3306/swtest"}
-      dataSource.user: ${SW_STORAGE_METABASE_USER:root}
-      dataSource.password: ${SW_STORAGE_METABASE_PASSWORD:root@1234}
-      dataSource.cachePrepStmts: ${SW_STORAGE_METABASE_CACHE_PREP_STMTS:true}
-      dataSource.prepStmtCacheSize: ${SW_STORAGE_METABASE_PREP_STMT_CACHE_SQL_SIZE:250}
-      dataSource.prepStmtCacheSqlLimit: ${SW_STORAGE_METABASE_PREP_STMT_CACHE_SQL_LIMIT:2048}
-      dataSource.useServerPrepStmts: ${SW_STORAGE_METABASE_USE_SERVER_PREP_STMTS:true}
-    metadataQueryMaxSize: ${SW_STORAGE_METABASE_QUERY_MAX_SIZE:5000}
-    # InfluxDB configuration
+  selector: ${SW_STORAGE:influxdb}
+  influxdb:
     url: ${SW_STORAGE_INFLUXDB_URL:http://localhost:8086}
     user: ${SW_STORAGE_INFLUXDB_USER:root}
     password: ${SW_STORAGE_INFLUXDB_PASSWORD:}

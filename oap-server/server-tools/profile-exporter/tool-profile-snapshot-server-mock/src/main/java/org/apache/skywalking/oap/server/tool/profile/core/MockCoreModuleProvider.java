@@ -18,46 +18,42 @@
 
 package org.apache.skywalking.oap.server.tool.profile.core;
 
+import java.io.IOException;
+import java.util.Collections;
 import org.apache.skywalking.oap.server.core.CoreModule;
 import org.apache.skywalking.oap.server.core.CoreModuleConfig;
 import org.apache.skywalking.oap.server.core.CoreModuleProvider;
+import org.apache.skywalking.oap.server.core.analysis.meter.MeterSystem;
 import org.apache.skywalking.oap.server.core.annotation.AnnotationScan;
-import org.apache.skywalking.oap.server.core.cache.EndpointInventoryCache;
-import org.apache.skywalking.oap.server.core.cache.NetworkAddressInventoryCache;
+import org.apache.skywalking.oap.server.core.cache.NetworkAddressAliasCache;
 import org.apache.skywalking.oap.server.core.cache.ProfileTaskCache;
-import org.apache.skywalking.oap.server.core.cache.ServiceInstanceInventoryCache;
-import org.apache.skywalking.oap.server.core.cache.ServiceInventoryCache;
 import org.apache.skywalking.oap.server.core.command.CommandService;
 import org.apache.skywalking.oap.server.core.config.ConfigService;
-import org.apache.skywalking.oap.server.core.config.DownsamplingConfigService;
+import org.apache.skywalking.oap.server.core.config.DownSamplingConfigService;
 import org.apache.skywalking.oap.server.core.config.IComponentLibraryCatalogService;
+import org.apache.skywalking.oap.server.core.config.NamingLengthControl;
+import org.apache.skywalking.oap.server.core.oal.rt.OALEngineLoaderService;
 import org.apache.skywalking.oap.server.core.profile.ProfileTaskMutationService;
 import org.apache.skywalking.oap.server.core.query.AggregationQueryService;
 import org.apache.skywalking.oap.server.core.query.AlarmQueryService;
 import org.apache.skywalking.oap.server.core.query.LogQueryService;
 import org.apache.skywalking.oap.server.core.query.MetadataQueryService;
-import org.apache.skywalking.oap.server.core.query.MetricQueryService;
+import org.apache.skywalking.oap.server.core.query.MetricsMetadataQueryService;
+import org.apache.skywalking.oap.server.core.query.MetricsQueryService;
 import org.apache.skywalking.oap.server.core.query.ProfileTaskQueryService;
 import org.apache.skywalking.oap.server.core.query.TopNRecordsQueryService;
 import org.apache.skywalking.oap.server.core.query.TopologyQueryService;
 import org.apache.skywalking.oap.server.core.query.TraceQueryService;
-import org.apache.skywalking.oap.server.core.register.service.EndpointInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.IEndpointInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.INetworkAddressInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.IServiceInstanceInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.IServiceInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.NetworkAddressInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.ServiceInstanceInventoryRegister;
-import org.apache.skywalking.oap.server.core.register.service.ServiceInventoryRegister;
 import org.apache.skywalking.oap.server.core.remote.RemoteSenderService;
 import org.apache.skywalking.oap.server.core.remote.client.RemoteClientManager;
 import org.apache.skywalking.oap.server.core.server.GRPCHandlerRegister;
 import org.apache.skywalking.oap.server.core.server.JettyHandlerRegister;
 import org.apache.skywalking.oap.server.core.source.DefaultScopeDefine;
 import org.apache.skywalking.oap.server.core.source.SourceReceiver;
-import org.apache.skywalking.oap.server.core.storage.model.IModelGetter;
-import org.apache.skywalking.oap.server.core.storage.model.IModelOverride;
-import org.apache.skywalking.oap.server.core.storage.model.IModelSetter;
+import org.apache.skywalking.oap.server.core.storage.StorageException;
+import org.apache.skywalking.oap.server.core.storage.model.IModelManager;
+import org.apache.skywalking.oap.server.core.storage.model.ModelCreator;
+import org.apache.skywalking.oap.server.core.storage.model.ModelManipulator;
 import org.apache.skywalking.oap.server.core.storage.model.StorageModels;
 import org.apache.skywalking.oap.server.core.worker.IWorkerInstanceGetter;
 import org.apache.skywalking.oap.server.core.worker.IWorkerInstanceSetter;
@@ -73,9 +69,6 @@ import org.apache.skywalking.oap.server.tool.profile.core.mock.MockRemoteClientM
 import org.apache.skywalking.oap.server.tool.profile.core.mock.MockSourceReceiver;
 import org.apache.skywalking.oap.server.tool.profile.core.mock.MockStreamAnnotationListener;
 import org.apache.skywalking.oap.server.tool.profile.core.mock.MockWorkerInstancesService;
-
-import java.io.IOException;
-import java.util.Collections;
 
 public class MockCoreModuleProvider extends CoreModuleProvider {
 
@@ -104,6 +97,8 @@ public class MockCoreModuleProvider extends CoreModuleProvider {
 
     @Override
     public void prepare() throws ServiceNotProvidedException, ModuleStartException {
+        this.registerServiceImplementation(NamingLengthControl.class, new NamingLengthControl(50, 50, 150));
+
         MockStreamAnnotationListener streamAnnotationListener = new MockStreamAnnotationListener(getManager());
         annotationScan.registerListener(streamAnnotationListener);
 
@@ -115,14 +110,18 @@ public class MockCoreModuleProvider extends CoreModuleProvider {
             throw new ModuleStartException(e.getMessage(), e);
         }
 
+        this.registerServiceImplementation(MeterSystem.class, new MeterSystem(getManager()));
+
         CoreModuleConfig moduleConfig = new CoreModuleConfig();
         this.registerServiceImplementation(ConfigService.class, new ConfigService(moduleConfig));
-        this.registerServiceImplementation(DownsamplingConfigService.class, new DownsamplingConfigService(Collections.emptyList()));
+        this.registerServiceImplementation(
+            DownSamplingConfigService.class, new DownSamplingConfigService(Collections.emptyList()));
 
         this.registerServiceImplementation(GRPCHandlerRegister.class, new MockGRPCHandlerRegister());
         this.registerServiceImplementation(JettyHandlerRegister.class, new MockJettyHandlerRegister());
 
-        this.registerServiceImplementation(IComponentLibraryCatalogService.class, new MockComponentLibraryCatalogService());
+        this.registerServiceImplementation(
+            IComponentLibraryCatalogService.class, new MockComponentLibraryCatalogService());
 
         this.registerServiceImplementation(SourceReceiver.class, new MockSourceReceiver());
 
@@ -131,24 +130,16 @@ public class MockCoreModuleProvider extends CoreModuleProvider {
         this.registerServiceImplementation(IWorkerInstanceSetter.class, instancesService);
 
         this.registerServiceImplementation(RemoteSenderService.class, new RemoteSenderService(getManager()));
-        this.registerServiceImplementation(IModelSetter.class, storageModels);
-        this.registerServiceImplementation(IModelGetter.class, storageModels);
-        this.registerServiceImplementation(IModelOverride.class, storageModels);
+        this.registerServiceImplementation(ModelCreator.class, storageModels);
+        this.registerServiceImplementation(IModelManager.class, storageModels);
+        this.registerServiceImplementation(ModelManipulator.class, storageModels);
 
-        this.registerServiceImplementation(ServiceInventoryCache.class, new ServiceInventoryCache(getManager(), moduleConfig));
-        this.registerServiceImplementation(IServiceInventoryRegister.class, new ServiceInventoryRegister(getManager()));
-
-        this.registerServiceImplementation(ServiceInstanceInventoryCache.class, new ServiceInstanceInventoryCache(getManager(), moduleConfig));
-        this.registerServiceImplementation(IServiceInstanceInventoryRegister.class, new ServiceInstanceInventoryRegister(getManager()));
-
-        this.registerServiceImplementation(EndpointInventoryCache.class, new EndpointInventoryCache(getManager(), moduleConfig));
-        this.registerServiceImplementation(IEndpointInventoryRegister.class, new EndpointInventoryRegister(getManager()));
-
-        this.registerServiceImplementation(NetworkAddressInventoryCache.class, new NetworkAddressInventoryCache(getManager(), moduleConfig));
-        this.registerServiceImplementation(INetworkAddressInventoryRegister.class, new NetworkAddressInventoryRegister(getManager()));
+        this.registerServiceImplementation(
+            NetworkAddressAliasCache.class, new NetworkAddressAliasCache(moduleConfig));
 
         this.registerServiceImplementation(TopologyQueryService.class, new TopologyQueryService(getManager()));
-        this.registerServiceImplementation(MetricQueryService.class, new MetricQueryService(getManager()));
+        this.registerServiceImplementation(MetricsMetadataQueryService.class, new MetricsMetadataQueryService());
+        this.registerServiceImplementation(MetricsQueryService.class, new MetricsQueryService(getManager()));
         this.registerServiceImplementation(TraceQueryService.class, new TraceQueryService(getManager()));
         this.registerServiceImplementation(LogQueryService.class, new LogQueryService(getManager()));
         this.registerServiceImplementation(MetadataQueryService.class, new MetadataQueryService(getManager()));
@@ -166,13 +157,16 @@ public class MockCoreModuleProvider extends CoreModuleProvider {
         this.registerServiceImplementation(CommandService.class, new CommandService(getManager()));
 
         this.registerServiceImplementation(RemoteClientManager.class, new MockRemoteClientManager(getManager(), 0));
+
+        // add oal engine loader service implementations
+        this.registerServiceImplementation(OALEngineLoaderService.class, new OALEngineLoaderService(getManager()));
     }
 
     @Override
     public void start() throws ModuleStartException {
         try {
             annotationScan.scan();
-        } catch (IOException e) {
+        } catch (IOException | StorageException e) {
             throw new ModuleStartException(e.getMessage(), e);
         }
     }
@@ -184,7 +178,7 @@ public class MockCoreModuleProvider extends CoreModuleProvider {
     @Override
     public String[] requiredModules() {
         return new String[] {
-                TelemetryModule.NAME
+            TelemetryModule.NAME
         };
     }
 }

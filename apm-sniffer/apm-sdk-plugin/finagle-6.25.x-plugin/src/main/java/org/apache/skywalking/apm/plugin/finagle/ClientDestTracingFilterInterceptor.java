@@ -20,7 +20,6 @@ package org.apache.skywalking.apm.plugin.finagle;
 
 import com.twitter.finagle.Address;
 import org.apache.skywalking.apm.agent.core.context.ContextManager;
-import org.apache.skywalking.apm.agent.core.context.trace.ExitSpan;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.EnhancedInstance;
 import org.apache.skywalking.apm.agent.core.plugin.interceptor.enhance.MethodInterceptResult;
 
@@ -47,7 +46,7 @@ public class ClientDestTracingFilterInterceptor extends AbstractInterceptor {
     public void beforeMethodImpl(EnhancedInstance enhancedInstance, Method method, Object[] objects, Class<?>[] classes, MethodInterceptResult methodInterceptResult) throws Throwable {
         String peer = (String) enhancedInstance.getSkyWalkingDynamicField();
         getLocalContextHolder().let(FinagleCtxs.PEER_HOST, peer);
-        tryInjectContext((ExitSpan) getSpan());
+        tryInjectContext(getSpan());
     }
 
     @Override
@@ -59,7 +58,13 @@ public class ClientDestTracingFilterInterceptor extends AbstractInterceptor {
     @Override
     public void handleMethodExceptionImpl(EnhancedInstance enhancedInstance, Method method, Object[] objects,
                                           Class<?>[] classes, Throwable t) {
-        ContextManager.activeSpan().errorOccurred().log(t);
+        /*
+         * Current thread may not be the same thread that execute ClientTracingFilterInterceptor, we can not ensure
+         * there is an active span
+         */
+        if (ContextManager.isActive()) {
+            ContextManager.activeSpan().errorOccurred().log(t);
+        }
     }
 
     private String getRemote(Object[] objects) {

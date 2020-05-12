@@ -21,7 +21,6 @@ package org.apache.skywalking.apm.plugin.finagle;
 import com.twitter.finagle.context.Contexts;
 import com.twitter.util.Future;
 import com.twitter.util.FutureEventListener;
-import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
 import org.apache.skywalking.apm.agent.core.context.ContextManager;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.SpanLayer;
@@ -49,7 +48,7 @@ public class ServerTracingFilterInterceptor extends AbstractInterceptor {
             SWContextCarrier swContextCarrier = Contexts.broadcast().apply(SWContextCarrier$.MODULE$);
             span = ContextManager.createEntrySpan(swContextCarrier.getOperationName(), swContextCarrier.getCarrier());
         } else {
-            span = ContextManager.createEntrySpan("unknown", new ContextCarrier());
+            span = ContextManager.createEntrySpan("unknown", null);
         }
 
         span.setComponent(FINAGLE);
@@ -62,21 +61,29 @@ public class ServerTracingFilterInterceptor extends AbstractInterceptor {
     public Object afterMethodImpl(EnhancedInstance enhancedInstance, Method method, Object[] objects, Class<?>[] classes, Object ret) throws Throwable {
         final AbstractSpan finagleSpan = getSpan();
         getLocalContextHolder().remove(FinagleCtxs.SW_SPAN);
-        finagleSpan.prepareForAsync();
-        ContextManager.stopSpan(finagleSpan);
-        ((Future<?>) ret).addEventListener(new FutureEventListener<Object>() {
-            @Override
-            public void onSuccess(Object value) {
-                finagleSpan.asyncFinish();
-            }
 
-            @Override
-            public void onFailure(Throwable cause) {
-                finagleSpan.errorOccurred();
-                finagleSpan.log(cause);
-                finagleSpan.asyncFinish();
-            }
-        });
+        /*
+         * If the intercepted method throws exception, the ret will be null
+         */
+        if (ret == null) {
+            ContextManager.stopSpan(finagleSpan);
+        } else {
+            finagleSpan.prepareForAsync();
+            ContextManager.stopSpan(finagleSpan);
+            ((Future<?>) ret).addEventListener(new FutureEventListener<Object>() {
+                @Override
+                public void onSuccess(Object value) {
+                    finagleSpan.asyncFinish();
+                }
+
+                @Override
+                public void onFailure(Throwable cause) {
+                    finagleSpan.errorOccurred();
+                    finagleSpan.log(cause);
+                    finagleSpan.asyncFinish();
+                }
+            });
+        }
         return ret;
     }
 

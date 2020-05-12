@@ -21,6 +21,7 @@ package org.apache.skywalking.apm.plugin.finagle;
 import com.twitter.io.Bufs;
 import org.apache.skywalking.apm.agent.core.context.CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
+import org.apache.skywalking.apm.agent.core.context.SW8CarrierItem;
 import org.junit.Test;
 
 import java.util.HashMap;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.core.Is.is;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 
 public class CodecUtilsTest {
@@ -43,9 +45,7 @@ public class CodecUtilsTest {
         swContextCarrier = makeSWContextCarrier();
         assertSwContextCarrier(swContextCarrier, CodecUtils.decode(CodecUtils.encode(swContextCarrier)));
 
-        ContextCarrier contextCarrier = new ContextCarrier();
         swContextCarrier = new SWContextCarrier();
-        swContextCarrier.setContextCarrier(contextCarrier);
         assertSwContextCarrier(swContextCarrier, CodecUtils.decode(Bufs.EMPTY));
     }
 
@@ -54,7 +54,9 @@ public class CodecUtilsTest {
         CarrierItem next = contextCarrier.items();
         while (next.hasNext()) {
             next = next.next();
-            next.setHeadValue(UUID.randomUUID().toString());
+            if (next.getHeadKey().equals(SW8CarrierItem.HEADER_NAME)) {
+                next.setHeadValue(UUID.randomUUID().toString());
+            }
         }
         SWContextCarrier swContextCarrier = new SWContextCarrier();
         swContextCarrier.setContextCarrier(contextCarrier);
@@ -65,15 +67,20 @@ public class CodecUtilsTest {
     private void assertSwContextCarrier(SWContextCarrier expected, SWContextCarrier actual) {
         assertThat(expected.getOperationName(), is(actual.getOperationName()));
         Map<String, String> data = new HashMap<>();
-        CarrierItem next = expected.getCarrier().items();
-        while (next.hasNext()) {
-            next = next.next();
-            data.put(next.getHeadKey(), next.getHeadValue());
+        if (actual.getCarrier() == null) {
+            assertNull(expected.getCarrier());
+        } else {
+            CarrierItem next = expected.getCarrier().items();
+            while (next.hasNext()) {
+                next = next.next();
+                data.put(next.getHeadKey(), next.getHeadValue());
+            }
+            next = actual.getCarrier().items();
+            while (next.hasNext()) {
+                next = next.next();
+                assertThat(next.getHeadValue(), is(data.get(next.getHeadKey())));
+            }
         }
-        next = actual.getCarrier().items();
-        while (next.hasNext()) {
-            next = next.next();
-            assertThat(next.getHeadValue(), is(data.get(next.getHeadKey())));
-        }
+
     }
 }

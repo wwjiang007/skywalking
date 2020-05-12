@@ -24,16 +24,17 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.skywalking.apm.util.StringUtil;
 import org.apache.skywalking.oap.server.core.analysis.manual.segment.SegmentRecord;
-import org.apache.skywalking.oap.server.core.query.entity.BasicTrace;
-import org.apache.skywalking.oap.server.core.query.entity.QueryOrder;
-import org.apache.skywalking.oap.server.core.query.entity.Span;
-import org.apache.skywalking.oap.server.core.query.entity.TraceBrief;
-import org.apache.skywalking.oap.server.core.query.entity.TraceState;
+import org.apache.skywalking.oap.server.core.query.type.BasicTrace;
+import org.apache.skywalking.oap.server.core.query.type.QueryOrder;
+import org.apache.skywalking.oap.server.core.query.type.Span;
+import org.apache.skywalking.oap.server.core.query.type.TraceBrief;
+import org.apache.skywalking.oap.server.core.query.type.TraceState;
 import org.apache.skywalking.oap.server.core.storage.query.ITraceQueryDAO;
 import org.apache.skywalking.oap.server.library.util.BooleanUtils;
 import org.apache.skywalking.oap.server.storage.plugin.influxdb.InfluxClient;
-import org.apache.skywalking.oap.server.storage.plugin.influxdb.base.RecordDAO;
+import org.apache.skywalking.oap.server.storage.plugin.influxdb.InfluxConstants;
 import org.elasticsearch.common.Strings;
 import org.influxdb.dto.Query;
 import org.influxdb.dto.QueryResult;
@@ -41,10 +42,10 @@ import org.influxdb.querybuilder.SelectQueryImpl;
 import org.influxdb.querybuilder.WhereQueryImpl;
 import org.influxdb.querybuilder.clauses.Clause;
 
+import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.contains;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.eq;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.gte;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.lte;
-import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.regex;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.select;
 
 @Slf4j
@@ -61,9 +62,9 @@ public class TraceQuery implements ITraceQueryDAO {
                                        long minDuration,
                                        long maxDuration,
                                        String endpointName,
-                                       int serviceId,
-                                       int serviceInstanceId,
-                                       int endpointId,
+                                       String serviceId,
+                                       String serviceInstanceId,
+                                       String endpointId,
                                        String traceId,
                                        int limit,
                                        int from,
@@ -77,7 +78,7 @@ public class TraceQuery implements ITraceQueryDAO {
         }
 
         WhereQueryImpl<SelectQueryImpl> recallQuery = select()
-            .function("top", orderBy, limit + from)
+            .function(InfluxConstants.SORT_DES, orderBy, limit + from)
             .column(SegmentRecord.SEGMENT_ID)
             .column(SegmentRecord.START_TIME)
             .column(SegmentRecord.ENDPOINT_NAME)
@@ -98,15 +99,15 @@ public class TraceQuery implements ITraceQueryDAO {
             recallQuery.and(lte(SegmentRecord.LATENCY, maxDuration));
         }
         if (!Strings.isNullOrEmpty(endpointName)) {
-            recallQuery.and(regex(SegmentRecord.ENDPOINT_NAME, "/" + endpointName.replaceAll("/", "\\\\/") + "/"));
+            recallQuery.and(contains(SegmentRecord.ENDPOINT_NAME, endpointName.replaceAll("/", "\\\\/")));
         }
-        if (serviceId != 0) {
-            recallQuery.and(eq(RecordDAO.TAG_SERVICE_ID, String.valueOf(serviceId)));
+        if (StringUtil.isNotEmpty(serviceId)) {
+            recallQuery.and(eq(InfluxConstants.TagName.SERVICE_ID, serviceId));
         }
-        if (serviceInstanceId != 0) {
+        if (StringUtil.isNotEmpty(serviceInstanceId)) {
             recallQuery.and(eq(SegmentRecord.SERVICE_INSTANCE_ID, serviceInstanceId));
         }
-        if (endpointId != 0) {
+        if (!com.google.common.base.Strings.isNullOrEmpty(endpointId)) {
             recallQuery.and(eq(SegmentRecord.ENDPOINT_ID, endpointId));
         }
         if (!Strings.isNullOrEmpty(traceId)) {
@@ -169,6 +170,7 @@ public class TraceQuery implements ITraceQueryDAO {
         WhereQueryImpl query = select().column(SegmentRecord.SEGMENT_ID)
                                        .column(SegmentRecord.TRACE_ID)
                                        .column(SegmentRecord.SERVICE_ID)
+                                       .column(SegmentRecord.SERVICE_INSTANCE_ID)
                                        .column(SegmentRecord.ENDPOINT_NAME)
                                        .column(SegmentRecord.START_TIME)
                                        .column(SegmentRecord.END_TIME)
@@ -192,15 +194,16 @@ public class TraceQuery implements ITraceQueryDAO {
 
             segmentRecord.setSegmentId((String) values.get(1));
             segmentRecord.setTraceId((String) values.get(2));
-            segmentRecord.setServiceId((int) values.get(3));
-            segmentRecord.setEndpointName((String) values.get(4));
-            segmentRecord.setStartTime((long) values.get(5));
-            segmentRecord.setEndTime((long) values.get(6));
-            segmentRecord.setLatency((int) values.get(7));
-            segmentRecord.setIsError((int) values.get(8));
-            segmentRecord.setVersion((int) values.get(10));
+            segmentRecord.setServiceId((String) values.get(3));
+            segmentRecord.setServiceInstanceId((String) values.get(4));
+            segmentRecord.setEndpointName((String) values.get(5));
+            segmentRecord.setStartTime((long) values.get(6));
+            segmentRecord.setEndTime((long) values.get(7));
+            segmentRecord.setLatency((int) values.get(8));
+            segmentRecord.setIsError((int) values.get(9));
+            segmentRecord.setVersion((int) values.get(11));
 
-            String base64 = (String) values.get(9);
+            String base64 = (String) values.get(10);
             if (!Strings.isNullOrEmpty(base64)) {
                 segmentRecord.setDataBinary(Base64.getDecoder().decode(base64));
             }

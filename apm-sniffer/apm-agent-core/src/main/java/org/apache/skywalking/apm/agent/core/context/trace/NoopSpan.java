@@ -51,11 +51,6 @@ public class NoopSpan implements AbstractSpan {
     }
 
     @Override
-    public AbstractSpan setComponent(String componentName) {
-        return this;
-    }
-
-    @Override
     public AbstractSpan setLayer(SpanLayer layer) {
         return this;
     }
@@ -101,18 +96,8 @@ public class NoopSpan implements AbstractSpan {
     }
 
     @Override
-    public int getOperationId() {
-        return 0;
-    }
-
-    @Override
     public String getOperationName() {
         return "";
-    }
-
-    @Override
-    public AbstractSpan setOperationId(int operationId) {
-        return this;
     }
 
     @Override
@@ -127,6 +112,15 @@ public class NoopSpan implements AbstractSpan {
     @Override
     public AbstractSpan setPeer(String remotePeer) {
         return this;
+    }
+
+    @Override
+    public boolean isProfiling() {
+        return false;
+    }
+
+    @Override
+    public void skipAnalysis() {
     }
 
     @Override

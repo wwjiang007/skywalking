@@ -27,6 +27,7 @@ The `value` of `Tag` is the same as what are supported in [Customize Enhance Tra
 * `ActiveSpan.error(Throwable throwable)` Mark the current span as error status with a Throwable.
 * `ActiveSpan.debug(String debugMsg)` Add a debug level log message in the current span.
 * `ActiveSpan.info(String infoMsg)` Add an info level log message in the current span.
+* `ActiveSpan.setOperationName(String operationName)` Customize an operation name. 
 
 ```java
 ActiveSpan.tag("my_tag", "my_value");
@@ -49,7 +50,19 @@ ActiveSpan.debug("Test-debug-Msg");
 @Tag(key = "username", value = "returnedObj.username")
 @Tag(key = "age", value = "returnedObj.age")
 public User methodYouWantToTrace(String param1, String param2) {
+    // ActiveSpan.setOperationName("Customize your own operation name, if this is an entry span, this would be an endpoint name");
     // ...
 }
 ```
 
+* Use `TraceContext.putCorrelation()` API to put custom data in tracing context. 
+```java
+Optional<String> previous = TraceContext.putCorrelation("customKey", "customValue");
+```
+CorrelationContext will remove the item when the value is `null` or empty.
+
+* Use `TraceContext.getCorrelation()` API to get custom data.
+```java
+Optional<String> value = TraceContext.getCorrelation("customKey");
+```
+CorrelationContext configuration descriptions could be found in [the agent configuration](README.md#table-of-agent-configuration-properties) documentation, with `correlation.` as the prefix.

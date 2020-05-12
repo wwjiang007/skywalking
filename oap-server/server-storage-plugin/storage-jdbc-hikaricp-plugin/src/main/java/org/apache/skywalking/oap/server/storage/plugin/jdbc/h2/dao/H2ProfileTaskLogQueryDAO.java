@@ -19,8 +19,8 @@
 package org.apache.skywalking.oap.server.storage.plugin.jdbc.h2.dao;
 
 import org.apache.skywalking.oap.server.core.profile.ProfileTaskLogRecord;
-import org.apache.skywalking.oap.server.core.query.entity.ProfileTaskLog;
-import org.apache.skywalking.oap.server.core.query.entity.ProfileTaskLogOperationType;
+import org.apache.skywalking.oap.server.core.query.type.ProfileTaskLog;
+import org.apache.skywalking.oap.server.core.query.type.ProfileTaskLogOperationType;
 import org.apache.skywalking.oap.server.core.storage.profile.IProfileTaskLogQueryDAO;
 import org.apache.skywalking.oap.server.library.client.jdbc.JDBCClientException;
 import org.apache.skywalking.oap.server.library.client.jdbc.hikaricp.JDBCHikariCPClient;
@@ -41,14 +41,10 @@ public class H2ProfileTaskLogQueryDAO implements IProfileTaskLogQueryDAO {
     }
 
     @Override
-    public List<ProfileTaskLog> getTaskLogList(String taskId) throws IOException {
+    public List<ProfileTaskLog> getTaskLogList() throws IOException {
         final StringBuilder sql = new StringBuilder();
         final ArrayList<Object> condition = new ArrayList<>(1);
         sql.append("select * from ").append(ProfileTaskLogRecord.INDEX_NAME).append(" where 1=1 ");
-
-        if (taskId != null) {
-            sql.append(" and ").append(ProfileTaskLogRecord.TASK_ID).append(" = ?");
-        }
 
         sql.append("ORDER BY ").append(ProfileTaskLogRecord.OPERATION_TIME).append(" DESC ");
 
@@ -69,7 +65,7 @@ public class H2ProfileTaskLogQueryDAO implements IProfileTaskLogQueryDAO {
         return ProfileTaskLog.builder()
                              .id(data.getString("id"))
                              .taskId(data.getString(ProfileTaskLogRecord.TASK_ID))
-                             .instanceId(data.getInt(ProfileTaskLogRecord.INSTANCE_ID))
+                             .instanceId(data.getString(ProfileTaskLogRecord.INSTANCE_ID))
                              .operationType(ProfileTaskLogOperationType.parse(data.getInt(ProfileTaskLogRecord.OPERATION_TYPE)))
                              .operationTime(data.getLong(ProfileTaskLogRecord.OPERATION_TIME))
                              .build();

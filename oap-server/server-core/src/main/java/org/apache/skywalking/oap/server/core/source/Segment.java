@@ -44,16 +44,16 @@ public class Segment extends Source {
     private String traceId;
     @Setter
     @Getter
-    private int serviceId;
+    private String serviceId;
     @Setter
     @Getter
-    private int serviceInstanceId;
+    private String serviceInstanceId;
     @Setter
     @Getter
     private String endpointName;
     @Setter
     @Getter
-    private int endpointId;
+    private String endpointId;
     @Setter
     @Getter
     private long startTime;

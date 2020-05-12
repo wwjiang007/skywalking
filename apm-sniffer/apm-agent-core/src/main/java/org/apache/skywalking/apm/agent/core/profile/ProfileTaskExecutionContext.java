@@ -18,15 +18,13 @@
 
 package org.apache.skywalking.apm.agent.core.profile;
 
-import org.apache.skywalking.apm.agent.core.conf.Config;
-import org.apache.skywalking.apm.agent.core.context.TracingContext;
-import org.apache.skywalking.apm.agent.core.context.ids.ID;
-
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import org.apache.skywalking.apm.agent.core.conf.Config;
+import org.apache.skywalking.apm.agent.core.context.TracingContext;
 
 /**
  * profile task execution context, it will create on process this profile task
@@ -74,48 +72,53 @@ public class ProfileTaskExecutionContext {
      *
      * @return is add profile success
      */
-    public boolean attemptProfiling(TracingContext tracingContext, ID traceSegmentId, String firstSpanOPName) {
+    public ProfileStatusReference attemptProfiling(TracingContext tracingContext,
+                                                   String traceSegmentId,
+                                                   String firstSpanOPName) {
         // check has available slot
         final int usingSlotCount = currentProfilingCount.get();
         if (usingSlotCount >= Config.Profile.MAX_PARALLEL) {
-            return false;
+            return ProfileStatusReference.createWithNone();
         }
 
         // check first operation name matches
         if (!Objects.equals(task.getFistSpanOPName(), firstSpanOPName)) {
-            return false;
+            return ProfileStatusReference.createWithNone();
         }
 
         // if out limit started profiling count then stop add profiling
         if (totalStartedProfilingCount.get() > task.getMaxSamplingCount()) {
-            return false;
+            return ProfileStatusReference.createWithNone();
         }
 
         // try to occupy slot
         if (!currentProfilingCount.compareAndSet(usingSlotCount, usingSlotCount + 1)) {
-            return false;
+            return ProfileStatusReference.createWithNone();
         }
 
-        final ThreadProfiler threadProfiler = new ThreadProfiler(tracingContext, traceSegmentId, Thread.currentThread(), this);
+        final ThreadProfiler threadProfiler = new ThreadProfiler(
+            tracingContext, traceSegmentId, Thread.currentThread(), this);
         int slotLength = profilingSegmentSlots.length();
         for (int slot = 0; slot < slotLength; slot++) {
             if (profilingSegmentSlots.compareAndSet(slot, null, threadProfiler)) {
-                break;
+                return threadProfiler.profilingStatus();
             }
         }
-        return true;
+        return ProfileStatusReference.createWithNone();
     }
 
     /**
      * profiling recheck
      */
-    public boolean profilingRecheck(TracingContext tracingContext, ID traceSegmentId, String firstSpanOPName) {
+    public void profilingRecheck(TracingContext tracingContext, String traceSegmentId, String firstSpanOPName) {
         // if started, keep profiling
-        if (tracingContext.isProfiling()) {
-            return true;
+        if (tracingContext.profileStatus().isBeingWatched()) {
+            return;
         }
 
-        return attemptProfiling(tracingContext, traceSegmentId, firstSpanOPName);
+        // update profiling status
+        tracingContext.profileStatus()
+                      .updateStatus(attemptProfiling(tracingContext, traceSegmentId, firstSpanOPName).get());
     }
 
     /**

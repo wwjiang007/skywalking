@@ -17,7 +17,7 @@
   * [Netty SocketIO](https://github.com/mrniko/netty-socketio) 1.x
 * HTTP Client
   * [Feign](https://github.com/OpenFeign/feign) 9.x
-  * [Netflix Spring Cloud Feign](https://github.com/spring-cloud/spring-cloud-netflix/tree/master/spring-cloud-starter-feign) 1.1.x, 1.2.x, 1.3.x
+  * [Netflix Spring Cloud Feign](https://github.com/spring-cloud/spring-cloud-openfeign) 1.1.x -> 2.x
   * [Okhttp](https://github.com/square/okhttp) 3.x
   * [Apache httpcomponent HttpClient](http://hc.apache.org/) 2.0 -> 3.1, 4.2, 4.3
   * [Spring RestTemplete](https://github.com/spring-projects/spring-framework) 4.x
@@ -32,6 +32,7 @@
   * [Sharding-JDBC](https://github.com/shardingjdbc/sharding-jdbc) 1.5.x
   * [ShardingSphere](https://github.com/apache/incubator-shardingsphere) 3.0.0, 4.0.0-RC1
   * PostgreSQL Driver 8.x, 9.x, 42.x
+  * Mariadb Driver 2.x, 1.8
 * RPC Frameworks
   * [Dubbo](https://github.com/alibaba/dubbo) 2.5.4 -> 2.6.0
   * [Dubbox](https://github.com/dangdangdotcom/dubbox) 2.8.4
@@ -59,7 +60,8 @@
     * [Spymemcached](https://github.com/couchbase/spymemcached) 2.x
     * [Xmemcached](https://github.com/killme2008/xmemcached) 2.x
   * [Elasticsearch](https://github.com/elastic/elasticsearch)
-    * [transport-client](https://github.com/elastic/elasticsearch/tree/master/client/transport) 5.2.x-5.6.x
+    * [transport-client](https://github.com/elastic/elasticsearch/tree/v5.2.0/client/transport) 5.2.x-5.6.x
+    * [transport-client](https://github.com/elastic/elasticsearch/tree/v6.7.1/client/transport) 6.7.1-6.8.4
     * [rest-high-level-client](https://www.elastic.co/guide/en/elasticsearch/client/java-rest/6.7/index.html) 6.7.1-6.8.4
     * [rest-high-level-client](https://www.elastic.co/guide/en/elasticsearch/client/java-rest/7.0/java-rest-high.html) 7.0.0-7.5.2
   * [Solr](https://github.com/apache/lucene-solr/)

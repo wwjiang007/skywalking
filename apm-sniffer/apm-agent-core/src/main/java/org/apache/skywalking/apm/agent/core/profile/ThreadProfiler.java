@@ -19,19 +19,17 @@
 package org.apache.skywalking.apm.agent.core.profile;
 
 import com.google.common.base.Objects;
-import org.apache.skywalking.apm.agent.core.conf.Config;
-import org.apache.skywalking.apm.agent.core.context.TracingContext;
-import org.apache.skywalking.apm.agent.core.context.ids.ID;
-
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
+import org.apache.skywalking.apm.agent.core.conf.Config;
+import org.apache.skywalking.apm.agent.core.context.TracingContext;
 
 public class ThreadProfiler {
 
     // current tracing context
     private final TracingContext tracingContext;
     // current tracing segment id
-    private final ID traceSegmentId;
+    private final String traceSegmentId;
     // need to profiling thread
     private final Thread profilingThread;
     // profiling execution context
@@ -42,16 +40,22 @@ public class ThreadProfiler {
     private long profilingMaxTimeMills;
 
     // after min duration threshold check, it will start dump
-    private ProfilingStatus profilingStatus = ProfilingStatus.READY;
+    private final ProfileStatusReference profilingStatus;
     // thread dump sequence
     private int dumpSequence = 0;
 
-    public ThreadProfiler(TracingContext tracingContext, ID traceSegmentId, Thread profilingThread,
+    public ThreadProfiler(TracingContext tracingContext, String traceSegmentId, Thread profilingThread,
         ProfileTaskExecutionContext executionContext) {
         this.tracingContext = tracingContext;
         this.traceSegmentId = traceSegmentId;
         this.profilingThread = profilingThread;
         this.executionContext = executionContext;
+        if (tracingContext.profileStatus() == null) {
+            this.profilingStatus = ProfileStatusReference.createWithPending();
+        } else {
+            this.profilingStatus = tracingContext.profileStatus();
+            this.profilingStatus.updateStatus(ProfileStatus.PENDING);
+        }
         this.profilingMaxTimeMills = TimeUnit.MINUTES.toMillis(Config.Profile.MAX_DURATION);
     }
 
@@ -62,7 +66,7 @@ public class ThreadProfiler {
         if (System.currentTimeMillis() - tracingContext.createTime() > executionContext.getTask()
                                                                                        .getMinDurationThreshold()) {
             this.profilingStartTime = System.currentTimeMillis();
-            this.profilingStatus = ProfilingStatus.PROFILING;
+            this.tracingContext.profileStatus().updateStatus(ProfileStatus.PROFILING);
         }
     }
 
@@ -70,7 +74,7 @@ public class ThreadProfiler {
      * Stop profiling status
      */
     public void stopProfiling() {
-        this.profilingStatus = ProfilingStatus.STOPPED;
+        this.tracingContext.profileStatus().updateStatus(ProfileStatus.STOPPED);
     }
 
     /**
@@ -129,7 +133,7 @@ public class ThreadProfiler {
      */
     public boolean matches(TracingContext context) {
         // match trace id
-        return Objects.equal(context.getReadableGlobalTraceId(), tracingContext.getReadableGlobalTraceId());
+        return Objects.equal(context.getReadablePrimaryTraceId(), tracingContext.getReadablePrimaryTraceId());
     }
 
     /**
@@ -145,7 +149,7 @@ public class ThreadProfiler {
         return tracingContext;
     }
 
-    public ProfilingStatus profilingStatus() {
+    public ProfileStatusReference profilingStatus() {
         return profilingStatus;
     }
 

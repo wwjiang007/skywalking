@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.skywalking.oap.server.core.alarm.AlarmRecord;
-import org.apache.skywalking.oap.server.core.query.entity.AlarmMessage;
-import org.apache.skywalking.oap.server.core.query.entity.Alarms;
-import org.apache.skywalking.oap.server.core.query.entity.Scope;
+import org.apache.skywalking.oap.server.core.query.type.AlarmMessage;
+import org.apache.skywalking.oap.server.core.query.type.Alarms;
+import org.apache.skywalking.oap.server.core.query.enumeration.Scope;
 import org.apache.skywalking.oap.server.core.storage.query.IAlarmQueryDAO;
 import org.apache.skywalking.oap.server.storage.plugin.influxdb.InfluxClient;
 import org.elasticsearch.common.Strings;
@@ -34,10 +34,10 @@ import org.influxdb.dto.QueryResult;
 import org.influxdb.querybuilder.SelectQueryImpl;
 import org.influxdb.querybuilder.WhereQueryImpl;
 
+import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.contains;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.eq;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.gte;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.lte;
-import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.regex;
 import static org.influxdb.querybuilder.BuiltQuery.QueryBuilder.select;
 
 @Slf4j
@@ -64,7 +64,7 @@ public class AlarmQuery implements IAlarmQueryDAO {
                        .and(lte(InfluxClient.TIME, InfluxClient.timeInterval(endTB)));
         }
         if (!Strings.isNullOrEmpty(keyword)) {
-            recallQuery.and(regex(AlarmRecord.ALARM_MESSAGE, keyword));
+            recallQuery.and(contains(AlarmRecord.ALARM_MESSAGE, keyword.replaceAll("/", "\\\\/")));
         }
         if (Objects.nonNull(scopeId)) {
             recallQuery.and(eq(AlarmRecord.SCOPE, scopeId));

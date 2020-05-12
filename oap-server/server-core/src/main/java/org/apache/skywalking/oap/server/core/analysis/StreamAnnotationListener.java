@@ -25,7 +25,7 @@ import org.apache.skywalking.oap.server.core.analysis.worker.NoneStreamingProces
 import org.apache.skywalking.oap.server.core.analysis.worker.RecordStreamProcessor;
 import org.apache.skywalking.oap.server.core.analysis.worker.TopNStreamProcessor;
 import org.apache.skywalking.oap.server.core.annotation.AnnotationListener;
-import org.apache.skywalking.oap.server.core.register.worker.InventoryStreamProcessor;
+import org.apache.skywalking.oap.server.core.storage.StorageException;
 import org.apache.skywalking.oap.server.library.module.ModuleDefineHolder;
 
 /**
@@ -46,13 +46,11 @@ public class StreamAnnotationListener implements AnnotationListener {
 
     @SuppressWarnings("unchecked")
     @Override
-    public void notify(Class aClass) {
+    public void notify(Class aClass) throws StorageException {
         if (aClass.isAnnotationPresent(Stream.class)) {
             Stream stream = (Stream) aClass.getAnnotation(Stream.class);
 
-            if (stream.processor().equals(InventoryStreamProcessor.class)) {
-                InventoryStreamProcessor.getInstance().create(moduleDefineHolder, stream, aClass);
-            } else if (stream.processor().equals(RecordStreamProcessor.class)) {
+            if (stream.processor().equals(RecordStreamProcessor.class)) {
                 RecordStreamProcessor.getInstance().create(moduleDefineHolder, stream, aClass);
             } else if (stream.processor().equals(MetricsStreamProcessor.class)) {
                 MetricsStreamProcessor.getInstance().create(moduleDefineHolder, stream, aClass);
@@ -64,7 +62,8 @@ public class StreamAnnotationListener implements AnnotationListener {
                 throw new UnexpectedException("Unknown stream processor.");
             }
         } else {
-            throw new UnexpectedException("Stream annotation listener could only parse the class present stream annotation.");
+            throw new UnexpectedException(
+                "Stream annotation listener could only parse the class present stream annotation.");
         }
     }
 }

@@ -25,6 +25,8 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
+import org.apache.skywalking.apm.toolkit.trace.ActiveSpan;
+import org.apache.skywalking.apm.toolkit.trace.TraceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,11 +37,16 @@ public class TestController {
 
     private static final String SUCCESS = "Success";
 
+    private static final String CORRELATION_CONTEXT_KEY = "toolkit-test";
+    private static final String CORRELATION_CONTEXT_VALUE = "correlationValueTest";
+    private static final String CORRELATION_CONTEXT_TAG_KEY = "correlation";
+
     @Autowired
     private TestService testService;
 
     @RequestMapping("/tool-kit")
     public String toolKitCase() {
+        testService.testSetOperationName("tool-kit-set-operation-name");
         testService.testTag();
         testService.testInfo("testInfoParam");
         testService.testDebug();
@@ -48,6 +55,7 @@ public class TestController {
         testService.testErrorThrowable();
         testService.testTagAnnotation("testTagAnnotationParam1", "testTagAnnotationParam2");
         testService.testTagAnnotationReturnInfo("zhangsan", 15);
+        TraceContext.putCorrelation(CORRELATION_CONTEXT_KEY, CORRELATION_CONTEXT_VALUE);
         testService.asyncCallable(() -> {
             visit("http://localhost:8080/apm-toolkit-trace-scenario/case/asyncVisit/callable");
             return true;
@@ -77,16 +85,19 @@ public class TestController {
 
     @RequestMapping("/asyncVisit/runnable")
     public String asyncVisitRunnable() {
+        ActiveSpan.tag(CORRELATION_CONTEXT_TAG_KEY, TraceContext.getCorrelation(CORRELATION_CONTEXT_KEY).orElse(""));
         return SUCCESS;
     }
 
     @RequestMapping("/asyncVisit/callable")
     public String asyncVisitCallable() {
+        ActiveSpan.tag(CORRELATION_CONTEXT_TAG_KEY, TraceContext.getCorrelation(CORRELATION_CONTEXT_KEY).orElse(""));
         return SUCCESS;
     }
 
     @RequestMapping("/asyncVisit/supplier")
     public String asyncVisitSupplier() {
+        ActiveSpan.tag(CORRELATION_CONTEXT_TAG_KEY, TraceContext.getCorrelation(CORRELATION_CONTEXT_KEY).orElse(""));
         return SUCCESS;
     }
 
