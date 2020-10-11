@@ -27,13 +27,13 @@ nodes:
     type: Python
     isReal: true
   - id: not null
+    name: provider-kafka
+    type: Python
+    isReal: true
+  - id: not null
     name: Your_ApplicationName
     type: Tomcat
     isReal: true
-  - id: not null
-    name: github.com
-    type: Unknown
-    isReal: false
 calls:
   - id: not null
     source: ${User[0]}
@@ -47,13 +47,14 @@ calls:
       - SERVER
     target: ${Your_ApplicationName[0]}
   - id: not null
+    source: ${consumer[0]}
+    detectPoints:
+      - CLIENT
+      - SERVER
+    target: ${provider-kafka[0]}
+  - id: not null
     source: ${Your_ApplicationName[0]}
     detectPoints:
       - CLIENT
       - SERVER
     target: ${provider[0]}
-  - id: not null
-    source: ${provider[0]}
-    detectPoints:
-      - CLIENT
-    target: ${github.com[0]}

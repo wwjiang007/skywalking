@@ -194,8 +194,8 @@ public class TopologyQuery implements ITopologyQueryDAO {
             .as(ServiceInstanceRelationClientSideMetrics.COMPONENT_ID)
             .from(measurement)
             .where()
-            .and(gte(InfluxClient.TIME, InfluxClient.timeInterval(startTB)))
-            .and(lte(InfluxClient.TIME, InfluxClient.timeInterval(endTB)));
+            .and(gte(InfluxClient.TIME, InfluxClient.timeIntervalTB(startTB)))
+            .and(lte(InfluxClient.TIME, InfluxClient.timeIntervalTB(endTB)));
 
         if (!serviceIds.isEmpty()) {
             WhereNested whereNested = subQuery.andNested();
@@ -223,8 +223,8 @@ public class TopologyQuery implements ITopologyQueryDAO {
             .as(ServiceInstanceRelationClientSideMetrics.COMPONENT_ID)
             .from(measurement)
             .where()
-            .and(gte(InfluxClient.TIME, InfluxClient.timeInterval(startTB)))
-            .and(lte(InfluxClient.TIME, InfluxClient.timeInterval(endTB)));
+            .and(gte(InfluxClient.TIME, InfluxClient.timeIntervalTB(startTB)))
+            .and(lte(InfluxClient.TIME, InfluxClient.timeIntervalTB(endTB)));
 
         StringBuilder builder = new StringBuilder("((");
         builder.append(sourceCName).append("='").append(sourceServiceId)
@@ -255,7 +255,7 @@ public class TopologyQuery implements ITopologyQueryDAO {
         series.getValues().forEach(values -> {
             Call.CallDetail call = new Call.CallDetail();
             String entityId = String.valueOf(values.get(1));
-            int componentId = (int) values.get(2);
+            int componentId = ((Number) values.get(2)).intValue();
             call.buildFromServiceRelation(entityId, componentId, detectPoint);
             calls.add(call);
         });
@@ -285,7 +285,7 @@ public class TopologyQuery implements ITopologyQueryDAO {
         series.getValues().forEach(values -> {
             Call.CallDetail call = new Call.CallDetail();
             String entityId = (String) values.get(1);
-            int componentId = (int) values.get(2);
+            int componentId = ((Number) values.get(2)).intValue();
             call.buildFromInstanceRelation(entityId, componentId, detectPoint);
             calls.add(call);
         });

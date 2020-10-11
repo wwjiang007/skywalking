@@ -23,6 +23,8 @@ from skywalking import agent, config
 if __name__ == '__main__':
     config.service_name = 'consumer'
     config.logging_level = 'DEBUG'
+    config.protocol = 'http'
+    config.collector_address = 'http://oap:12800'
     agent.start()
 
     import socketserver
@@ -39,6 +41,12 @@ if __name__ == '__main__':
             req.add_header('Content-Type', 'application/json; charset=utf-8')
             req.add_header('Content-Length', str(len(data)))
             with request.urlopen(req, data):
+                self.wfile.write(data)
+
+            req2 = request.Request("http://provider-kafka:9089/users")
+            req2.add_header('Content-Type', 'application/json; charset=utf-8')
+            req2.add_header('Content-Length', str(len(data)))
+            with request.urlopen(req2, data):
                 self.wfile.write(data)
 
     PORT = 9090
